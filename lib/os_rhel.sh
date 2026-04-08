@@ -32,22 +32,21 @@ else
     readonly RHEL_PKG_MGR="yum"
 fi
 
-# --- PAM password quality (pwquality) ---
-readonly RHEL_PWQUALITY_MINLEN=8
+# --- PAM password quality (from config.sh) ---
+RHEL_PWQUALITY_MINLEN="${PAM_PWQUALITY_MINLEN}"
 readonly RHEL_PWQUALITY_DCREDIT=-1
 readonly RHEL_PWQUALITY_UCREDIT=-1
 readonly RHEL_PWQUALITY_LCREDIT=-1
 readonly RHEL_PWQUALITY_OCREDIT=-1
-readonly RHEL_PWQUALITY_MINCLASS=3
+RHEL_PWQUALITY_MINCLASS="${PAM_PWQUALITY_MINCLASS}"
 readonly RHEL_PWQUALITY_MAXREPEAT=3
 readonly RHEL_PWQUALITY_MAXCLASSREPEAT=3
 
-# --- Blocked kernel modules ---
-readonly RHEL_BLOCKED_MODULES=(cramfs freevxfs jffs2 hfs hfsplus squashfs udf vfat usb-storage)
+# --- Blocked kernel modules (from config.sh) ---
+IFS=' ' read -ra RHEL_BLOCKED_MODULES <<< "$BLOCKED_MODULES"
 
 # --- sysctl security settings (NO IPv6 disable) ---
 declare -A RHEL_SYSCTL_SETTINGS=(
-    ["net.ipv4.ip_forward"]="0"
     ["net.ipv4.conf.all.send_redirects"]="0"
     ["net.ipv4.conf.default.send_redirects"]="0"
     ["net.ipv4.conf.all.accept_source_route"]="0"
@@ -75,6 +74,10 @@ declare -A RHEL_SYSCTL_SETTINGS=(
     ["net.ipv6.conf.default.accept_ra"]="0"
     ["net.ipv6.conf.all.forwarding"]="0"
 )
+# Conditionally set ip_forward=0 based on config.sh
+if [[ "${SYSCTL_DISABLE_IP_FORWARD}" == "true" ]]; then
+    RHEL_SYSCTL_SETTINGS["net.ipv4.ip_forward"]="0"
+fi
 
 # --- Sensitive file permissions ---
 readonly RHEL_FILES_644=(/etc/passwd /etc/group /etc/passwd- /etc/group-)
@@ -92,18 +95,8 @@ readonly RHEL_FILES_O_NORW=(
     /var/log /var/spool/cron
 )
 
-# --- SUID removal targets ---
-readonly RHEL_SUID_REMOVE_TARGETS=(
-    /usr/bin/nmap
-    /usr/bin/bash
-    /usr/bin/find
-    /usr/bin/less
-    /usr/bin/pkexec
-    /usr/bin/at
-    /usr/bin/newgrp
-    /usr/bin/chfn
-    /usr/bin/chsh
-)
+# --- SUID removal targets (from config.sh) ---
+IFS=' ' read -ra RHEL_SUID_REMOVE_TARGETS <<< "$SUID_REMOVE_TARGETS"
 
 # --- nologin target system accounts (RHEL-specific) ---
 readonly RHEL_NOLOGIN_ACCOUNTS=(
@@ -119,35 +112,36 @@ readonly RHEL_FALSE_SHELL_ACCOUNTS=(
     systemd-network systemd-timesync
 )
 
-# --- Services to disable ---
-readonly RHEL_DISABLE_SERVICES=(
-    avahi-daemon.service
-    cups.service
-    cups-browsed.service
-    bluetooth.service
-)
+# --- Services to disable (from config.sh) ---
+# Convert space-separated string to array, append .service suffix if missing
+IFS=' ' read -ra RHEL_DISABLE_SERVICES <<< "$DISABLE_SERVICES"
+RHEL_DISABLE_SERVICES=("${RHEL_DISABLE_SERVICES[@]/%/.service}")
+# Fix double .service suffix for entries that already had it
+RHEL_DISABLE_SERVICES=("${RHEL_DISABLE_SERVICES[@]/%.service.service/.service}")
 
-# --- SSH hardening settings ---
-readonly RHEL_SSH_PERMIT_ROOT_LOGIN="prohibit-password"
-readonly RHEL_SSH_PASSWORD_AUTH="no"
-readonly RHEL_SSH_MAX_AUTH_TRIES="4"
-readonly RHEL_SSH_CLIENT_ALIVE_INTERVAL="300"
-readonly RHEL_SSH_CLIENT_ALIVE_COUNT_MAX="2"
-readonly RHEL_SSH_LOGIN_GRACE_TIME="60"
+# --- SSH hardening settings (from config.sh) ---
+RHEL_SSH_PERMIT_ROOT_LOGIN="${SSH_PERMIT_ROOT_LOGIN}"
+RHEL_SSH_PASSWORD_AUTH="${SSH_PASSWORD_AUTH}"
+RHEL_SSH_MAX_AUTH_TRIES="${SSH_MAX_AUTH_TRIES}"
+RHEL_SSH_CLIENT_ALIVE_INTERVAL="${SSH_CLIENT_ALIVE_INTERVAL}"
+RHEL_SSH_CLIENT_ALIVE_COUNT_MAX="${SSH_CLIENT_ALIVE_COUNT_MAX}"
+RHEL_SSH_LOGIN_GRACE_TIME="${SSH_LOGIN_GRACE_TIME}"
 
-# --- Password aging (/etc/login.defs) ---
-readonly RHEL_PASS_MAX_DAYS="90"
-readonly RHEL_PASS_MIN_DAYS="7"
-readonly RHEL_PASS_WARN_AGE="14"
-readonly RHEL_LOGIN_RETRIES="3"
-readonly RHEL_DEFAULT_UMASK="027"
+# --- Password aging (from config.sh) ---
+RHEL_PASS_MAX_DAYS="${PASS_MAX_DAYS}"
+RHEL_PASS_MIN_DAYS="${PASS_MIN_DAYS}"
+RHEL_PASS_WARN_AGE="${PASS_WARN_AGE}"
+RHEL_LOGIN_RETRIES="${LOGIN_RETRIES}"
+RHEL_DEFAULT_UMASK="${DEFAULT_UMASK}"
 
-# --- firewalld profile-based port sets ---
-readonly RHEL_FIREWALLD_PROFILE="${FIREWALLD_PROFILE:-base}"
+# --- firewalld profile-based port sets (from config.sh) ---
+RHEL_FIREWALLD_PROFILE="${HARDENING_PROFILE}"
 
-readonly RHEL_SHM_NOEXEC="${SHM_NOEXEC:-true}"
-readonly RHEL_HIDEPID_ENABLED="${HIDEPID_ENABLED:-true}"
-readonly RHEL_FAILLOCK_DENY_ROOT="${FAILLOCK_DENY_ROOT:-false}"
+RHEL_SHM_NOEXEC="${SHM_NOEXEC}"
+RHEL_HIDEPID_ENABLED="${HIDEPID_ENABLED}"
+RHEL_FAILLOCK_DENY="${FAILLOCK_DENY}"
+RHEL_FAILLOCK_UNLOCK_TIME="${FAILLOCK_UNLOCK_TIME}"
+RHEL_FAILLOCK_DENY_ROOT="${FAILLOCK_DENY_ROOT}"
 
 declare -A RHEL_FIREWALLD_PROFILES=(
     [base]="22/tcp"
@@ -157,8 +151,10 @@ declare -A RHEL_FIREWALLD_PROFILES=(
     [full]="22/tcp 53/tcp 53/udp 80/tcp 88/tcp 389/tcp 389/udp 443/tcp 514/udp 636/tcp 953/tcp 1514/tcp 1515/tcp 1516/tcp 3268/tcp 3269/tcp"
 )
 
-# --- Tunnel defense settings ---
-readonly RHEL_TUNNEL_ICMP_MAX_PAYLOAD=128
+# --- Tunnel defense settings (from config.sh) ---
+RHEL_TUNNEL_DEFENSE_ENABLED="${TUNNEL_DEFENSE_ENABLED}"
+RHEL_TUNNEL_ICMP_MAX_PAYLOAD="${TUNNEL_ICMP_MAX_PAYLOAD}"
+RHEL_TUNNEL_REMOVE_TOOLS="${TUNNEL_REMOVE_TOOLS}"
 readonly RHEL_TUNNEL_DNS_SUSPICIOUS_TOOLS=(iodine iodined dns2tcp dnscapy dnscat dnscat2 dnstunnel)
 readonly RHEL_TUNNEL_SOCKS5_PORTS=(1080 1081 8080 8888 9050 9150 1090 3128 8118)
 readonly RHEL_TUNNEL_TOOL_PROCS=(
@@ -167,13 +163,16 @@ readonly RHEL_TUNNEL_TOOL_PROCS=(
     chisel ligolo frpc ngrok inlets bore gost
     autossh sshuttle
 )
-readonly RHEL_TUNNEL_LOCK_RESOLV="${TUNNEL_LOCK_RESOLV:-true}"
+RHEL_TUNNEL_LOCK_RESOLV="${TUNNEL_LOCK_RESOLV}"
 
-# --- Allowlists (from environment or defaults) ---
-RHEL_WHITELISTED_PORTS="${WHITELISTED_PORTS:-}"
-RHEL_ACCOUNT_ALLOWLIST="${ACCOUNT_ALLOWLIST:-}"
-RHEL_CRONTAB_ALLOWLIST="${CRONTAB_ALLOWLIST:-}"
-RHEL_SERVICE_ALLOWLIST="${SERVICE_ALLOWLIST:-}"
+# --- Custom allowed ports (from config.sh) ---
+RHEL_CUSTOM_ALLOWED_PORTS="${CUSTOM_ALLOWED_PORTS}"
+
+# --- Allowlists (from config.sh) ---
+RHEL_WHITELISTED_PORTS="${WHITELISTED_PORTS}"
+RHEL_ACCOUNT_ALLOWLIST="${ACCOUNT_ALLOWLIST}"
+RHEL_CRONTAB_ALLOWLIST="${CRONTAB_ALLOWLIST}"
+RHEL_SERVICE_ALLOWLIST="${SERVICE_ALLOWLIST}"
 
 # --- sysctl skip pattern for checks ---
 readonly RHEL_SYSCTL_SKIP_PATTERN='^(dev\.cdrom\.info|fs\.binfmt_misc\.|kernel\.core_modes|kernel\.ns_last_pid|kernel\.random\.uuid|kernel\.random\.boot_id|kernel\.tainted|kernel\.pty\.nr|fs\.dentry-state|fs\.file-nr|fs\.inode-nr|fs\.inode-state|net\.netfilter\.nf_conntrack_count|kernel\.perf_event_max_sample_rate|vm\.stat_interval)'
@@ -1010,9 +1009,9 @@ setup_pam_faillock() {
     backup_file "$faillock_conf"
     {
         echo "# Account lockout policy — auto-generated by hardening"
-        echo "deny = 5"
-        echo "unlock_time = 900"
-        echo "fail_interval = 900"
+        echo "deny = ${RHEL_FAILLOCK_DENY}"
+        echo "unlock_time = ${RHEL_FAILLOCK_UNLOCK_TIME}"
+        echo "fail_interval = ${RHEL_FAILLOCK_UNLOCK_TIME}"
         if [[ "${RHEL_FAILLOCK_DENY_ROOT}" == "true" ]]; then
             echo "even_deny_root"
             echo "root_unlock_time = 60"
@@ -1023,7 +1022,7 @@ setup_pam_faillock() {
     if command -v restorecon &>/dev/null; then
         restorecon "$faillock_conf" 2>/dev/null || true
     fi
-    log_ok "faillock.conf written (deny=5, unlock_time=900s)"
+    log_ok "faillock.conf written (deny=${RHEL_FAILLOCK_DENY}, unlock_time=${RHEL_FAILLOCK_UNLOCK_TIME}s)"
 
     # Enable faillock via authselect
     if command -v authselect &>/dev/null; then
@@ -1054,9 +1053,9 @@ setup_pam_faillock() {
                 if ! grep -q 'pam_faillock' "$pam_file" 2>/dev/null; then
                     backup_file "$pam_file"
                     # Insert faillock preauth before pam_unix auth line
-                    sed -i '/^auth.*pam_unix\.so/i auth        required      pam_faillock.so preauth silent deny=5 unlock_time=900' "$pam_file" 2>/dev/null || true
+                    sed -i "/^auth.*pam_unix\.so/i auth        required      pam_faillock.so preauth silent deny=${RHEL_FAILLOCK_DENY} unlock_time=${RHEL_FAILLOCK_UNLOCK_TIME}" "$pam_file" 2>/dev/null || true
                     # Insert faillock authfail after pam_unix auth line
-                    sed -i '/^auth.*pam_unix\.so/a auth        [default=die] pam_faillock.so authfail deny=5 unlock_time=900' "$pam_file" 2>/dev/null || true
+                    sed -i "/^auth.*pam_unix\.so/a auth        [default=die] pam_faillock.so authfail deny=${RHEL_FAILLOCK_DENY} unlock_time=${RHEL_FAILLOCK_UNLOCK_TIME}" "$pam_file" 2>/dev/null || true
                     # Add account line if missing
                     if ! grep -q 'pam_faillock.*account' "$pam_file" 2>/dev/null; then
                         sed -i '/^account.*pam_unix\.so/i account     required      pam_faillock.so' "$pam_file" 2>/dev/null || true

@@ -25,15 +25,14 @@ _OS_DEBIAN_SH_LOADED=1
 # Configuration Constants
 ###############################################################################
 
-# --- PAM password policy ---
-readonly DEB_PAM_PASSWDQC_MIN="disabled,24,12,8,7"
+# --- PAM password policy (from config.sh) ---
+DEB_PAM_PASSWDQC_MIN="${PAM_PASSWDQC_MIN}"
 
-# --- Blocked kernel modules ---
-readonly DEB_BLOCKED_MODULES=(cramfs freevxfs jffs2 hfs hfsplus squashfs udf vfat usb-storage)
+# --- Blocked kernel modules (from config.sh) ---
+IFS=' ' read -ra DEB_BLOCKED_MODULES <<< "$BLOCKED_MODULES"
 
 # --- sysctl security settings (NO IPv6 disable) ---
 declare -A DEB_SYSCTL_SETTINGS=(
-    ["net.ipv4.ip_forward"]="0"
     ["net.ipv4.conf.all.send_redirects"]="0"
     ["net.ipv4.conf.default.send_redirects"]="0"
     ["net.ipv4.conf.all.accept_source_route"]="0"
@@ -61,6 +60,10 @@ declare -A DEB_SYSCTL_SETTINGS=(
     ["net.ipv6.conf.default.accept_ra"]="0"
     ["net.ipv6.conf.all.forwarding"]="0"
 )
+# Conditionally set ip_forward=0 based on config.sh
+if [[ "${SYSCTL_DISABLE_IP_FORWARD}" == "true" ]]; then
+    DEB_SYSCTL_SETTINGS["net.ipv4.ip_forward"]="0"
+fi
 
 # --- Sensitive file permissions ---
 readonly DEB_FILES_644=(/etc/passwd /etc/group /etc/passwd- /etc/group-)
@@ -78,19 +81,8 @@ readonly DEB_FILES_O_NORW=(
     /var/log /var/spool/cron/crontabs
 )
 
-# --- SUID removal targets ---
-readonly DEB_SUID_REMOVE_TARGETS=(
-    /usr/bin/nmap
-    /usr/bin/bash
-    /usr/bin/dash
-    /usr/bin/find
-    /usr/bin/less
-    /usr/bin/pkexec
-    /usr/bin/at
-    /usr/bin/newgrp
-    /usr/bin/chfn
-    /usr/bin/chsh
-)
+# --- SUID removal targets (from config.sh) ---
+IFS=' ' read -ra DEB_SUID_REMOVE_TARGETS <<< "$SUID_REMOVE_TARGETS"
 
 # --- nologin target system accounts ---
 readonly DEB_NOLOGIN_ACCOUNTS=(
@@ -107,35 +99,36 @@ readonly DEB_FALSE_SHELL_ACCOUNTS=(
     gnome-initial-setup hplip gdm
 )
 
-# --- Services to disable ---
-readonly DEB_DISABLE_SERVICES=(
-    avahi-daemon.service
-    cups.service
-    cups-browsed.service
-    bluetooth.service
-)
+# --- Services to disable (from config.sh) ---
+# Convert space-separated string to array, append .service suffix if missing
+IFS=' ' read -ra DEB_DISABLE_SERVICES <<< "$DISABLE_SERVICES"
+DEB_DISABLE_SERVICES=("${DEB_DISABLE_SERVICES[@]/%/.service}")
+# Fix double .service suffix for entries that already had it
+DEB_DISABLE_SERVICES=("${DEB_DISABLE_SERVICES[@]/%.service.service/.service}")
 
-# --- SSH hardening settings ---
-readonly DEB_SSH_PERMIT_ROOT_LOGIN="prohibit-password"
-readonly DEB_SSH_PASSWORD_AUTH="no"
-readonly DEB_SSH_MAX_AUTH_TRIES="4"
-readonly DEB_SSH_CLIENT_ALIVE_INTERVAL="300"
-readonly DEB_SSH_CLIENT_ALIVE_COUNT_MAX="2"
-readonly DEB_SSH_LOGIN_GRACE_TIME="60"
+# --- SSH hardening settings (from config.sh) ---
+DEB_SSH_PERMIT_ROOT_LOGIN="${SSH_PERMIT_ROOT_LOGIN}"
+DEB_SSH_PASSWORD_AUTH="${SSH_PASSWORD_AUTH}"
+DEB_SSH_MAX_AUTH_TRIES="${SSH_MAX_AUTH_TRIES}"
+DEB_SSH_CLIENT_ALIVE_INTERVAL="${SSH_CLIENT_ALIVE_INTERVAL}"
+DEB_SSH_CLIENT_ALIVE_COUNT_MAX="${SSH_CLIENT_ALIVE_COUNT_MAX}"
+DEB_SSH_LOGIN_GRACE_TIME="${SSH_LOGIN_GRACE_TIME}"
 
-# --- Password aging (/etc/login.defs) ---
-readonly DEB_PASS_MAX_DAYS="90"
-readonly DEB_PASS_MIN_DAYS="7"
-readonly DEB_PASS_WARN_AGE="14"
-readonly DEB_LOGIN_RETRIES="3"
-readonly DEB_DEFAULT_UMASK="027"
+# --- Password aging (from config.sh) ---
+DEB_PASS_MAX_DAYS="${PASS_MAX_DAYS}"
+DEB_PASS_MIN_DAYS="${PASS_MIN_DAYS}"
+DEB_PASS_WARN_AGE="${PASS_WARN_AGE}"
+DEB_LOGIN_RETRIES="${LOGIN_RETRIES}"
+DEB_DEFAULT_UMASK="${DEFAULT_UMASK}"
 
-# --- UFW profile-based port sets ---
-readonly DEB_UFW_PROFILE="${UFW_PROFILE:-base}"
+# --- UFW profile-based port sets (from config.sh) ---
+DEB_UFW_PROFILE="${HARDENING_PROFILE}"
 
-readonly DEB_SHM_NOEXEC="${SHM_NOEXEC:-true}"
-readonly DEB_HIDEPID_ENABLED="${HIDEPID_ENABLED:-true}"
-readonly DEB_FAILLOCK_DENY_ROOT="${FAILLOCK_DENY_ROOT:-false}"
+DEB_SHM_NOEXEC="${SHM_NOEXEC}"
+DEB_HIDEPID_ENABLED="${HIDEPID_ENABLED}"
+DEB_FAILLOCK_DENY="${FAILLOCK_DENY}"
+DEB_FAILLOCK_UNLOCK_TIME="${FAILLOCK_UNLOCK_TIME}"
+DEB_FAILLOCK_DENY_ROOT="${FAILLOCK_DENY_ROOT}"
 
 declare -A DEB_UFW_PROFILES=(
     [base]="22/tcp"
@@ -145,8 +138,10 @@ declare -A DEB_UFW_PROFILES=(
     [full]="22/tcp 53/tcp 53/udp 80/tcp 88/tcp 389/tcp 389/udp 443/tcp 514/udp 636/tcp 953/tcp 1514/tcp 1515/tcp 1516/tcp 3268/tcp 3269/tcp"
 )
 
-# --- Tunnel defense settings ---
-readonly DEB_TUNNEL_ICMP_MAX_PAYLOAD=128
+# --- Tunnel defense settings (from config.sh) ---
+DEB_TUNNEL_DEFENSE_ENABLED="${TUNNEL_DEFENSE_ENABLED}"
+DEB_TUNNEL_ICMP_MAX_PAYLOAD="${TUNNEL_ICMP_MAX_PAYLOAD}"
+DEB_TUNNEL_REMOVE_TOOLS="${TUNNEL_REMOVE_TOOLS}"
 readonly DEB_TUNNEL_DNS_SUSPICIOUS_TOOLS=(iodine iodined dns2tcp dnscapy dnscat dnscat2 dnstunnel)
 readonly DEB_TUNNEL_SOCKS5_PORTS=(1080 1081 8080 8888 9050 9150 1090 3128 8118)
 readonly DEB_TUNNEL_TOOL_PROCS=(
@@ -156,13 +151,16 @@ readonly DEB_TUNNEL_TOOL_PROCS=(
     autossh sshuttle
 )
 readonly DEB_UFW_TUNNEL_MARKER="# TUNNEL_HARDENING_BLOCK_BEGIN"
-readonly DEB_TUNNEL_LOCK_RESOLV="${TUNNEL_LOCK_RESOLV:-true}"
+DEB_TUNNEL_LOCK_RESOLV="${TUNNEL_LOCK_RESOLV}"
 
-# --- Allowlists (from environment or defaults) ---
-DEB_WHITELISTED_PORTS="${WHITELISTED_PORTS:-}"
-DEB_ACCOUNT_ALLOWLIST="${ACCOUNT_ALLOWLIST:-}"
-DEB_CRONTAB_ALLOWLIST="${CRONTAB_ALLOWLIST:-}"
-DEB_SERVICE_ALLOWLIST="${SERVICE_ALLOWLIST:-}"
+# --- Custom allowed ports (from config.sh) ---
+DEB_CUSTOM_ALLOWED_PORTS="${CUSTOM_ALLOWED_PORTS}"
+
+# --- Allowlists (from config.sh) ---
+DEB_WHITELISTED_PORTS="${WHITELISTED_PORTS}"
+DEB_ACCOUNT_ALLOWLIST="${ACCOUNT_ALLOWLIST}"
+DEB_CRONTAB_ALLOWLIST="${CRONTAB_ALLOWLIST}"
+DEB_SERVICE_ALLOWLIST="${SERVICE_ALLOWLIST}"
 
 # --- sysctl skip pattern for checks ---
 readonly DEB_SYSCTL_SKIP_PATTERN='^(dev\.cdrom\.info|fs\.binfmt_misc\.|kernel\.core_modes|kernel\.ns_last_pid|kernel\.random\.uuid|kernel\.random\.boot_id|kernel\.tainted|kernel\.pty\.nr|fs\.dentry-state|fs\.file-nr|fs\.inode-nr|fs\.inode-state|net\.netfilter\.nf_conntrack_count|kernel\.perf_event_max_sample_rate|vm\.stat_interval)'
@@ -1063,16 +1061,16 @@ setup_pam_faillock() {
     backup_file "$faillock_conf"
     {
         echo "# Account lockout policy — auto-generated by hardening"
-        echo "deny = 5"
-        echo "unlock_time = 900"
-        echo "fail_interval = 900"
+        echo "deny = ${DEB_FAILLOCK_DENY}"
+        echo "unlock_time = ${DEB_FAILLOCK_UNLOCK_TIME}"
+        echo "fail_interval = ${DEB_FAILLOCK_UNLOCK_TIME}"
         if [[ "${DEB_FAILLOCK_DENY_ROOT}" == "true" ]]; then
             echo "even_deny_root"
             echo "root_unlock_time = 60"
         fi
     } > "$faillock_conf"
     chmod 0644 "$faillock_conf"
-    log_ok "faillock.conf written (deny=5, unlock_time=900s)"
+    log_ok "faillock.conf written (deny=${DEB_FAILLOCK_DENY}, unlock_time=${DEB_FAILLOCK_UNLOCK_TIME}s)"
     local pam_faillock_config="/usr/share/pam-configs/faillock"
     if [[ -f "$pam_faillock_config" ]]; then
         log_skip "pam_faillock pam-configs already exists — skipping"

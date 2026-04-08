@@ -31,13 +31,13 @@ _OS_MACOS_SH_LOADED=1
 # Configuration Constants
 ###############################################################################
 
-# --- SSH hardening settings ---
-readonly MAC_SSH_PERMIT_ROOT_LOGIN="no"
-readonly MAC_SSH_PASSWORD_AUTH="no"
-readonly MAC_SSH_MAX_AUTH_TRIES="4"
-readonly MAC_SSH_CLIENT_ALIVE_INTERVAL="300"
-readonly MAC_SSH_CLIENT_ALIVE_COUNT_MAX="2"
-readonly MAC_SSH_LOGIN_GRACE_TIME="60"
+# --- SSH hardening settings (from config.sh, macOS overrides PermitRootLogin to "no") ---
+MAC_SSH_PERMIT_ROOT_LOGIN="no"
+MAC_SSH_PASSWORD_AUTH="${SSH_PASSWORD_AUTH}"
+MAC_SSH_MAX_AUTH_TRIES="${SSH_MAX_AUTH_TRIES}"
+MAC_SSH_CLIENT_ALIVE_INTERVAL="${SSH_CLIENT_ALIVE_INTERVAL}"
+MAC_SSH_CLIENT_ALIVE_COUNT_MAX="${SSH_CLIENT_ALIVE_COUNT_MAX}"
+MAC_SSH_LOGIN_GRACE_TIME="${SSH_LOGIN_GRACE_TIME}"
 
 # --- Sensitive file permissions (octal, BSD stat -f '%Lp') ---
 # Files that should be 644
@@ -54,9 +54,9 @@ readonly MAC_FILES_O_NORW="/etc/ssh/sshd_config /etc/sysctl.conf /etc/pf.conf"
 readonly MAC_SYSCTL_KEYS="net.inet.ip.forwarding net.inet.ip.redirect net.inet6.ip6.forwarding"
 readonly MAC_SYSCTL_VALS="0 0 0"
 
-# --- Allowlists (from environment or defaults) ---
-MAC_WHITELISTED_PORTS="${WHITELISTED_PORTS:-}"
-MAC_ACCOUNT_ALLOWLIST="${ACCOUNT_ALLOWLIST:-}"
+# --- Allowlists (from config.sh) ---
+MAC_WHITELISTED_PORTS="${WHITELISTED_PORTS}"
+MAC_ACCOUNT_ALLOWLIST="${ACCOUNT_ALLOWLIST}"
 
 # --- Restore backup directory (for 02 script) ---
 MAC_RESTORE_BACKUP_DIR=""

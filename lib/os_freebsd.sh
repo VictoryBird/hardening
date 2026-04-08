@@ -39,6 +39,11 @@ declare -A BSD_SYSCTL_SETTINGS=(
     ["net.inet.ip.redirect"]="0"
     ["net.inet6.ip6.redirect"]="0"
 )
+# Conditionally disable IP forwarding based on config.sh
+if [[ "${SYSCTL_DISABLE_IP_FORWARD}" == "true" ]]; then
+    BSD_SYSCTL_SETTINGS["net.inet.ip.forwarding"]="0"
+    BSD_SYSCTL_SETTINGS["net.inet6.ip6.forwarding"]="0"
+fi
 
 # --- Sensitive file permissions ---
 readonly BSD_FILES_644=(/etc/passwd /etc/group)
@@ -55,18 +60,8 @@ readonly BSD_FILES_O_NORW=(
     /var/log /var/cron/tabs
 )
 
-# --- SUID removal targets ---
-readonly BSD_SUID_REMOVE_TARGETS=(
-    /usr/bin/nmap
-    /usr/local/bin/bash
-    /usr/bin/find
-    /usr/bin/less
-    /usr/bin/at
-    /usr/bin/chfn
-    /usr/bin/chsh
-    /usr/bin/opiepasswd
-    /usr/bin/opieinfo
-)
+# --- SUID removal targets (from config.sh) ---
+IFS=' ' read -ra BSD_SUID_REMOVE_TARGETS <<< "$SUID_REMOVE_TARGETS"
 
 # --- nologin target system accounts ---
 readonly BSD_NOLOGIN_ACCOUNTS=(
@@ -76,33 +71,26 @@ readonly BSD_NOLOGIN_ACCOUNTS=(
     bind cups smmsp mailnull
 )
 
-# --- Services to disable ---
-readonly BSD_DISABLE_SERVICES=(
-    sendmail
-    inetd
-    rpcbind
-    nfsd
-    mountd
-    rpc.statd
-    rpc.lockd
-)
+# --- Services to disable (from config.sh) ---
+# FreeBSD services don't use .service suffix — use names directly
+IFS=' ' read -ra BSD_DISABLE_SERVICES <<< "$DISABLE_SERVICES"
 
-# --- SSH hardening settings ---
-readonly BSD_SSH_PERMIT_ROOT_LOGIN="prohibit-password"
-readonly BSD_SSH_PASSWORD_AUTH="no"
-readonly BSD_SSH_MAX_AUTH_TRIES="4"
-readonly BSD_SSH_CLIENT_ALIVE_INTERVAL="300"
-readonly BSD_SSH_CLIENT_ALIVE_COUNT_MAX="2"
-readonly BSD_SSH_LOGIN_GRACE_TIME="60"
+# --- SSH hardening settings (from config.sh) ---
+BSD_SSH_PERMIT_ROOT_LOGIN="${SSH_PERMIT_ROOT_LOGIN}"
+BSD_SSH_PASSWORD_AUTH="${SSH_PASSWORD_AUTH}"
+BSD_SSH_MAX_AUTH_TRIES="${SSH_MAX_AUTH_TRIES}"
+BSD_SSH_CLIENT_ALIVE_INTERVAL="${SSH_CLIENT_ALIVE_INTERVAL}"
+BSD_SSH_CLIENT_ALIVE_COUNT_MAX="${SSH_CLIENT_ALIVE_COUNT_MAX}"
+BSD_SSH_LOGIN_GRACE_TIME="${SSH_LOGIN_GRACE_TIME}"
 
-# --- login.conf password policy ---
-readonly BSD_PASS_MAX_DAYS="90"
-readonly BSD_PASS_MIN_DAYS="7"
-readonly BSD_PASS_WARN_AGE="14"
-readonly BSD_DEFAULT_UMASK="027"
+# --- login.conf password policy (from config.sh) ---
+BSD_PASS_MAX_DAYS="${PASS_MAX_DAYS}"
+BSD_PASS_MIN_DAYS="${PASS_MIN_DAYS}"
+BSD_PASS_WARN_AGE="${PASS_WARN_AGE}"
+BSD_DEFAULT_UMASK="${DEFAULT_UMASK}"
 
-# --- pf firewall profile ---
-readonly BSD_PF_PROFILE="${PF_PROFILE:-base}"
+# --- pf firewall profile (from config.sh) ---
+BSD_PF_PROFILE="${HARDENING_PROFILE}"
 
 declare -A BSD_PF_PROFILES=(
     [base]="22"
@@ -112,8 +100,11 @@ declare -A BSD_PF_PROFILES=(
     [full]="22 53 80 88 389 443 514 636 953 1514 1515 1516 3268 3269"
 )
 
-# --- Tunnel defense settings ---
-readonly BSD_TUNNEL_ICMP_MAX_PAYLOAD=128
+# --- Tunnel defense settings (from config.sh) ---
+BSD_TUNNEL_DEFENSE_ENABLED="${TUNNEL_DEFENSE_ENABLED}"
+BSD_TUNNEL_ICMP_MAX_PAYLOAD="${TUNNEL_ICMP_MAX_PAYLOAD}"
+BSD_TUNNEL_REMOVE_TOOLS="${TUNNEL_REMOVE_TOOLS}"
+BSD_TUNNEL_LOCK_RESOLV="${TUNNEL_LOCK_RESOLV}"
 readonly BSD_TUNNEL_TOOL_PROCS=(
     ptunnel ptunnel-ng icmptunnel icmpsh pingtunnel
     iodine iodined dns2tcp dnscat dnscat2 dnscapy dnstunnel
@@ -142,11 +133,14 @@ readonly BSD_TUNNEL_BINS=(
 # --- sysctl skip pattern for checks ---
 readonly BSD_SYSCTL_SKIP_PATTERN='^(kern\.boottime|kern\.cp_time|hw\.pagesize|hw\.availpages|vm\.stats\.|kern\.ipc\.shm_last|kern\.msgbuf_clear|kern\.proc\.|debug\.|hw\.acpi\.|p1003)'
 
-# --- Allowlists (from environment or defaults) ---
-BSD_WHITELISTED_PORTS="${WHITELISTED_PORTS:-}"
-BSD_ACCOUNT_ALLOWLIST="${ACCOUNT_ALLOWLIST:-}"
-BSD_CRONTAB_ALLOWLIST="${CRONTAB_ALLOWLIST:-}"
-BSD_SERVICE_ALLOWLIST="${SERVICE_ALLOWLIST:-}"
+# --- Custom allowed ports (from config.sh) ---
+BSD_CUSTOM_ALLOWED_PORTS="${CUSTOM_ALLOWED_PORTS}"
+
+# --- Allowlists (from config.sh) ---
+BSD_WHITELISTED_PORTS="${WHITELISTED_PORTS}"
+BSD_ACCOUNT_ALLOWLIST="${ACCOUNT_ALLOWLIST}"
+BSD_CRONTAB_ALLOWLIST="${CRONTAB_ALLOWLIST}"
+BSD_SERVICE_ALLOWLIST="${SERVICE_ALLOWLIST}"
 
 # --- Restore backup directory (for 02 script) ---
 BSD_RESTORE_BACKUP_DIR=""

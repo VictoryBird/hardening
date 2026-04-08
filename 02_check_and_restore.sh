@@ -16,6 +16,8 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=lib/common.sh
 . "${SELF_DIR}/lib/common.sh"
 detect_os
+# shellcheck source=config.sh
+source "${SELF_DIR}/config.sh"
 # shellcheck source=lib/safety_guards.sh
 . "${SELF_DIR}/lib/safety_guards.sh"
 load_os_adapter
