@@ -1,0 +1,80 @@
+---
+- name: Remove selected files from managed hosts
+  hosts: env_lab
+  gather_facts: false
+  become: true
+
+  pre_tasks:
+    - name: Generate a single remove run timestamp on control node
+      ansible.builtin.set_fact:
+        remove_run_id: "{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
+      run_once: true
+      delegate_to: localhost
+      delegate_facts: true
+      become: false
+
+  vars:
+    control_run_dir: "{{ control_artifacts_root }}/fetched_files/removed_files/{{ hostvars['localhost']['remove_run_id'] }}/{{ inventory_hostname }}"
+
+    files_to_remove:
+      - /tmp/malware.sh
+      - /var/tmp/dropper.bin
+      - /opt/badtool/evil.py
+
+  tasks:
+    - name: Assert file list is defined
+      ansible.builtin.assert:
+        that:
+          - files_to_remove is defined
+          - files_to_remove | length > 0
+        fail_msg: "files_to_remove is not defined or empty"
+
+    - name: Check whether target files exist
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        get_checksum: true
+      loop: "{{ files_to_remove }}"
+      register: file_stat_results
+
+    - name: Ensure local artifact directory exists
+      ansible.builtin.file:
+        path: "{{ control_run_dir }}"
+        state: directory
+        mode: "0750"
+      delegate_to: localhost
+      become: false
+
+    - name: Write removal manifest on control node
+      ansible.builtin.copy:
+        dest: "{{ control_run_dir }}/manifest.txt"
+        mode: "0640"
+        content: |
+          inventory_hostname={{ inventory_hostname }}
+          remove_run_id={{ hostvars['localhost']['remove_run_id'] }}
+          {% for item in file_stat_results.results %}
+          path={{ item.item }}
+          exists={{ item.stat.exists | default(false) }}
+          isdir={{ item.stat.isdir | default(false) }}
+          size={{ item.stat.size | default('n/a') }}
+          checksum={{ item.stat.checksum | default('n/a') }}
+
+          {% endfor %}
+      delegate_to: localhost
+      become: false
+
+    - name: Remove existing files only
+      ansible.builtin.file:
+        path: "{{ item.item }}"
+        state: absent
+      loop: "{{ file_stat_results.results }}"
+      when:
+        - item.stat.exists | default(false)
+        - not (item.stat.isdir | default(false))
+      register: remove_results
+
+    - name: Show removal summary
+      ansible.builtin.debug:
+        msg:
+          - "path={{ item.item }}"
+          - "removed={{ item.changed }}"
+      loop: "{{ remove_results.results | default([]) }}"

@@ -1,0 +1,37 @@
+---
+- name: Execute deployed script on managed hosts
+  hosts: env_lab
+  gather_facts: false
+  become: true
+
+  vars:
+    script_path: "/opt/ansible/scripts/collect_info.sh"
+    script_args: ""
+    run_timeout: 300
+
+  tasks:
+    - name: Check deployed script exists
+      ansible.builtin.stat:
+        path: "{{ script_path }}"
+      register: script_stat
+
+    - name: Fail if script is missing
+      ansible.builtin.fail:
+        msg: "Script {{ script_path }} does not exist on {{ inventory_hostname }}"
+      when: not script_stat.stat.exists
+
+    - name: Execute script
+      ansible.builtin.command:
+        cmd: "{{ script_path }} {{ script_args }}"
+      register: script_run_result
+      changed_when: false
+      failed_when: script_run_result.rc != 0
+
+    - name: Show script stdout
+      ansible.builtin.debug:
+        var: script_run_result.stdout_lines
+
+    - name: Show script stderr when present
+      ansible.builtin.debug:
+        var: script_run_result.stderr_lines
+      when: script_run_result.stderr is defined and script_run_result.stderr | length > 0

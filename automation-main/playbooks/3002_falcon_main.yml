@@ -1,0 +1,132 @@
+---
+# CrowdStrike Falcon EDR Install and Run
+
+# ------------------------------------------------------------------
+# 0. AlmaLinux 스킵
+# ------------------------------------------------------------------
+- name: Skip Falcon EDR install on AlmaLinux
+  debug:
+    msg: "This host is AlmaLinux. Skipping Falcon EDR install."
+  when: ansible_facts['distribution'] == "AlmaLinux"
+
+- name: Start Falcon EDR Install and Run
+  shell: echo "Start Falcon EDR Install and Run"
+  # ignore_errors: yes
+  when: ansible_facts['distribution'] != "AlmaLinux"
+
+# ------------------------------------------------------------------
+# 1. OS/버전/아키텍처에 맞는 에이전트 자동 매칭
+# ------------------------------------------------------------------
+- name: Filter matching Falcon agent from matrix
+  set_fact:
+    falcon_match: "{{ falcon_agent_matrix |
+                      selectattr('os', 'equalto', ansible_os_family) |
+                      selectattr('arch', 'match', '^(all|' ~ ansible_architecture ~ '|' ~ ansible_machine ~ ')$') |
+                      selectattr('ver', 'match', '^(all|' ~ ansible_distribution_major_version ~ ')$') |
+                      list | first }}"
+  # ignore_errors: yes
+  when: ansible_facts['distribution'] != "AlmaLinux"
+
+- name: Show matched Falcon agent info
+  debug:
+    msg: "매칭된 에이전트: {{ falcon_match.file }} (hash: {{ falcon_match.hash }})"
+  when:
+    - ansible_facts['distribution'] != "AlmaLinux"
+    - falcon_match is defined
+
+- name: Abort if no matching agent found
+  fail:
+    msg: "{{ ansible_os_family }} {{ ansible_distribution_major_version }} {{ ansible_architecture }} 에 맞는 에이전트가 falcon_list에 없습니다."
+  when:
+    - ansible_facts['distribution'] != "AlmaLinux"
+    - falcon_match is undefined
+
+# ------------------------------------------------------------------
+# 2. 에이전트 파일 전송 (SHA256 무결성 검증 포함)
+# ------------------------------------------------------------------
+- name: Copy Falcon agent file to target
+  copy:
+    src: "{{ local_repo }}/{{ falcon_match.file }}"
+    dest: "/tmp/{{ falcon_match.file }}"
+    mode: '0644'
+  # ignore_errors: yes
+  when:
+    - ansible_facts['distribution'] != "AlmaLinux"
+    - falcon_match is defined
+# SHA256 무결성 검증
+- name: Verify SHA256 checksum after copy
+  stat:
+    path: "/tmp/{{ falcon_match.file }}"
+    checksum_algorithm: sha256
+  register: copied_file
+  when:
+    - ansible_facts['distribution'] != "AlmaLinux"
+    - falcon_match is defined
+
+- name: Abort if checksum mismatch
+  fail:
+    msg: "SHA256 불일치! 파일이 손상되었습니다."
+  when:
+    - ansible_facts['distribution'] != "AlmaLinux"
+    - falcon_match is defined
+    - copied_file.stat.checksum != falcon_match.hash
+# ------------------------------------------------------------------
+# 3. 설치 (RPM / DEB 분기)
+# ------------------------------------------------------------------
+- name: Install Falcon agent (RPM - RedHat / Suse)
+  yum:
+    name: "/tmp/{{ falcon_match.file }}"
+    state: present
+    disable_gpg_check: yes
+  # ignore_errors: yes
+  when:
+    - ansible_facts['distribution'] != "AlmaLinux"
+    - falcon_match is defined
+    - ansible_os_family in ["RedHat", "Suse"]
+
+- name: Install Falcon agent (DEB - Debian / Ubuntu)
+  apt:
+    deb: "/tmp/{{ falcon_match.file }}"
+    state: present
+  # ignore_errors: yes
+  when:
+    - ansible_facts['distribution'] != "AlmaLinux"
+    - falcon_match is defined
+    - ansible_os_family == "Debian"
+  become: true
+
+# ------------------------------------------------------------------
+# 4. CID 등록 및 서비스 시작
+# ------------------------------------------------------------------
+- name: Register CID and start Falcon service
+  shell: |
+    /opt/CrowdStrike/falconctl -s --cid={{ falcon_cid }}
+    systemctl enable falcon-sensor
+    systemctl start falcon-sensor
+  async: 3600
+  poll: 0
+  register: run_falcon
+  # ignore_errors: yes
+  when:
+    - ansible_facts['distribution'] != "AlmaLinux"
+    - falcon_match is defined
+
+- name: Save Falcon start Job ID
+  set_fact:
+    async_run_falcon_result: "{{ run_falcon }}"
+  # ignore_errors: yes
+  when:
+    - ansible_facts['distribution'] != "AlmaLinux"
+    - falcon_match is defined
+
+# ------------------------------------------------------------------
+# 5. 임시 파일 정리
+# ------------------------------------------------------------------
+- name: Remove Falcon agent installer
+  ansible.builtin.file:
+    path: "/tmp/{{ falcon_match.file }}"
+    state: absent
+  # ignore_errors: yes
+  when:
+    - ansible_facts['distribution'] != "AlmaLinux"
+    - falcon_match is defined

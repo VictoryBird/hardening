@@ -1,0 +1,12 @@
+---
+- name: Connectivity check
+  hosts: env_lab
+  gather_facts: false
+
+  tasks:
+    - name: Verify Ansible connectivity
+      ansible.builtin.ping:
+
+    - name: Show target host
+      ansible.builtin.debug:
+        msg: "Ping succeded on {{ inventory_hostname }}"

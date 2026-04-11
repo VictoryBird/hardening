@@ -1,0 +1,47 @@
+---
+- name: Sync local artifacts to MinIO
+  hosts: localhost
+  gather_facts: false
+  become: true
+
+  vars:
+    control_run_dir: "{{ control_artifacts_root }}/fetched_files/removed_files/{{ hostvars['localhost']['remove_run_id'] }}/{{ inventory_hostname }}"
+
+  pre_tasks:
+    - name: Verify mc is available on control node
+      ansible.builtin.command:
+        cmd: mc --version
+      register: mc_version_check
+      changed_when: false
+      run_once: true
+      delegate_to: localhost
+      become: false
+
+    - name: Verify MinIO bucket is reachable via configured alias
+      ansible.builtin.command:
+        cmd: mc ls "{{ minio_alias }}/{{ minio_bucket }}"
+      register: minio_bucket_check
+      changed_when: false
+      run_once: true
+      delegate_to: localhost
+      become: false
+
+  tasks:
+
+  post_tasks:
+    - name: Mirror local artifacts tree to MinIO
+      ansible.builtin.command:
+        cmd: >
+          mc mirror --overwrite
+          "{{ control_artifacts_root }}/"
+          "{{ minio_target }}/"
+      register: minio_mirror_result
+      changed_when: true
+      run_once: true
+      delegate_to: localhost
+      become: false
+
+    - name: Show MinIO mirror result
+      ansible.builtin.debug:
+        var: minio_mirror_result.stdout_lines
+      run_once: true

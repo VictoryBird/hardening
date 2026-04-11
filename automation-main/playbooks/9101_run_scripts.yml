@@ -1,0 +1,82 @@
+---
+- name: Run deployed scripts in order and save results locally
+  hosts: env_lab
+  gather_facts: false
+
+  vars:
+    remote_scripts_dir: "/opt/ansible/scripts"
+    scripts_to_run:
+      - "01_collect_info.sh"
+      - "02_health_check.sh"
+      - "03_listening_ports.sh"
+    script_results_base_dir: "{{ control_artifacts_root }}/script_results"
+
+  pre_tasks:
+    - name: Generate collection timestamp on control node
+      ansible.builtin.set_fact:
+        script_results_timestamp: "{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
+      run_once: true
+      delegate_to: localhost
+      delegate_facts: true
+      become: false
+
+    - name: Create results directory on control node
+      ansible.builtin.file:
+        path: "{{ script_results_base_dir }}/{{ hostvars['localhost']['script_results_timestamp'] }}"
+        state: directory
+        mode: "0755"
+      run_once: true
+      delegate_to: localhost
+      become: false
+
+  tasks:
+    - name: Check each script exists before execution
+      ansible.builtin.stat:
+        path: "{{ remote_scripts_dir }}/{{ item }}"
+      loop: "{{ scripts_to_run }}"
+      register: script_stat_results
+      become: true
+
+    - name: Fail if any required script is missing
+      ansible.builtin.fail:
+        msg: "Required script is missing: {{ item.stat.path }}"
+      loop: "{{ script_stat_results.results }}"
+      when: not item.stat.exists
+
+    - name: Execute scripts in order
+      ansible.builtin.command:
+        cmd: "{{ remote_scripts_dir }}/{{ item }}"
+      loop: "{{ scripts_to_run }}"
+      register: script_execution_results
+      changed_when: false
+      become: true
+
+    - name: Save per-host script execution results to local file
+      ansible.builtin.copy:
+        dest: "{{ script_results_base_dir }}/{{ hostvars['localhost']['script_results_timestamp'] }}/{{ inventory_hostname }}.txt"
+        mode: "0644"
+        content: |
+          host={{ inventory_hostname }}
+          generated_at={{ hostvars['localhost']['script_results_timestamp'] }}
+          remote_scripts_dir={{ remote_scripts_dir }}
+
+          {% for result in script_execution_results.results %}
+          ============================================================
+          script={{ result.item }}
+          rc={{ result.rc }}
+          start={{ result.start | default('') }}
+          end={{ result.end | default('') }}
+          delta={{ result.delta | default('') }}
+
+          [stdout]
+          {{ result.stdout | default('') }}
+
+          [stderr]
+          {{ result.stderr | default('') }}
+
+          {% if not loop.last %}
+
+          {% endif %}
+          {% endfor %}
+      delegate_to: localhost
+      become: false

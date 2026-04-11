@@ -1,0 +1,22 @@
+---
+- name: Bootstrap SSH public key
+  hosts: env_lab
+  gather_facts: false
+
+  tasks:
+    - name: Ensure .ssh directory exists
+      ansible.builtin.file:
+        path: "/home/{{ ansible_user }}/.ssh"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0700"
+      become: true
+
+    - name: Install controller public key
+      ansible.posix.authorized_key:
+        user: "{{ ansible_user }}"
+        state: present
+        key: "{{ lookup('file', controller_public_key_path) }}"
+      become: true
+

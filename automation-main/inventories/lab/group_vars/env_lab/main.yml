@@ -1,0 +1,20 @@
+inventory_environment: lab
+
+ansible_connection: ssh
+ansible_user: "kepco"
+ansible_password: "kepco"
+ansible_become_password: "kepco"
+# ansible_password: "Bt14@lS26"
+# ansible_become_password: "Bt14@lS26"
+ansible_ssh_private_key_file: /Users/skywalker/ansible-lab/ssh/ansiblectl.key
+ansible_python_interpreter: /usr/bin/python3
+
+ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
+
+controller_public_key_path: /Users/skywalker/ansible-lab/ssh/ansiblectl.key.pub
+
+VELO_VERSION: 0.75.6
+VELO_GITHUB: https://github.com/Velocidex/velociraptor/releases/download/v0.75
+
+os_ssh_service_name: ssh
+os_sudo_group: sudo

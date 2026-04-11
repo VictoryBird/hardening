@@ -1,0 +1,39 @@
+---
+falcon_agent_matrix:
+  # Windows
+  - { id: 1, os: "Windows", ver: "10", arch: "x86_64", file: "FalconSensor_Windows.exe", hash: "21954546529aad928a451c120c1f2dc6e5f7bad4f4fa033a072fe9aeaee9abc9" }
+  - { id: 2, os: "Windows", ver: "7", arch: "x86_64", file: "WindowsSensor.MaverickGyr.exe", hash: "f660c7260d111dcbf89936b9b914f117bd110b056e65d69444ee0e051c0fffb6" }
+  # Mac
+  - { id: 3, os: "Darwin", ver: "all", arch: "all", file: "FalconSensorMacOS.MaverickGyr.pkg", hash: "3ec73ed46352ad85a120599b5ce81630c6a682cdf8a05ab7c9058be44028d8fd" }
+  # RHEL / CentOS / Oracle / Amazon Linux (RPM 기반)
+  - { id: 4, os: "RedHat", ver: "7", arch: "x86_64", file: "falcon-sensor-7.34.0-18708.el7.x86_64.rpm", hash: "435a1f7c54203731323500a83824f269caa3912dfbd5359a3eb9d0a0710b6671" }
+  - { id: 5, os: "RedHat", ver: "10", arch: "aarch64", file: "falcon-sensor-7.34.0-18708.el10.aarch64.rpm", hash: "0cd8d09c894a7f77a5f111c781e7aba9155a72db648c35c41c03ccedfcd40b45" }
+  - { id: 6, os: "RedHat", ver: "8", arch: "aarch64", file: "falcon-sensor-7.34.0-18708.el8.aarch64.rpm", hash: "16f08bf143b2a30c591dc2359138665b23af0324816b7f635a0530f32574295b" }
+  - { id: 12, os: "RedHat", ver: "9", arch: "x86_64", file: "falcon-sensor-7.34.0-18708.el9.x86_64.rpm", hash: "d67d32590860dcf700bdbee79b8ac8117c6529eda2daf864ec82c3d1ec903083" }
+  - { id: 13, os: "RedHat", ver: "10", arch: "x86_64", file: "falcon-sensor-7.34.0-18708.el10.x86_64.rpm", hash: "55d095dec52998d41087f4744b5f607f00a21eeba2f29e5123bb378a97cf55c9" }
+  - { id: 14, os: "RedHat", ver: "9", arch: "aarch64", file: "falcon-sensor-7.34.0-18708.el9.aarch64.rpm", hash: "5d634b681122ba82e8e0ab31f01f739fbe0c3c29fefb8a07f1683f4471380024" }
+  - { id: 15, os: "RedHat", ver: "9", arch: "s390x", file: "falcon-sensor-7.34.0-18708.el9.s390x.rpm", hash: "7911ec0cb3c912370bd263855d32da05f0cf6ac49861595dec58b9e3aee9cc86" }
+  - { id: 16, os: "RedHat", ver: "8", arch: "s390x", file: "falcon-sensor-7.34.0-18708.el8.s390x.rpm", hash: "f240f08b9910699c3c01eef0d4d893a4464e8709df8fcee1c287f8d30cc8c4b7" }
+  - { id: 17, os: "RedHat", ver: "7", arch: "s390x", file: "falcon-sensor-7.34.0-18708.el7.s390x.rpm", hash: "f312c6b68a71a3eff1ceb561ee6ad21378f64cd915576e98722ad96192502ac5" }
+  - { id: 28, os: "OracleLinux", ver: "7", arch: "aarch64", file: "falcon-sensor-7.34.0-18708.el7.aarch64.rpm", hash: "a17047db060b3aa5f07d7495b79c24059f1fbe746f02933c743f948aae2c3166" }
+  - { id: 29, os: "RedHat", ver: "8", arch: "x86_64", file: "falcon-sensor-7.34.0-18708.el8.x86_64.rpm", hash: "defc03bac7ab0965263cf66492037fd8926542fa4ba62e38992caff7534f76e1" }
+  # Amazon Linux
+  - { id: 18, os: "Amazon", ver: "2", arch: "x86_64", file: "falcon-sensor-7.34.0-18708.amzn2.x86_64.rpm", hash: "8ea98dde53b764d907f2fa3947e89d9911716e02b24c207d0c1e9449a2939dd7" }
+  - { id: 19, os: "Amazon", ver: "2023", arch: "x86_64", file: "falcon-sensor-7.34.0-18708.amzn2023.x86_64.rpm", hash: "617311298c120bb1b976e6d327391cde9d30e493d669d60c16ad108f9cc2aa52" }
+  - { id: 20, os: "Amazon", ver: "2023", arch: "aarch64", file: "falcon-sensor-7.34.0-18708.amzn2023.aarch64.rpm", hash: "8a1d95f8a9ebec9498a1ed4fdc50100e65baa2ae1b0d002d998b7509f033639d" }
+  - { id: 21, os: "Amazon", ver: "2", arch: "aarch64", file: "falcon-sensor-7.34.0-18708.amzn2.aarch64.rpm", hash: "90692af67034227abaa84a8eedbc9f4ba6d9417d0f09e857d513da77ff3debff" }
+  # SLES (SUSE)
+  - { id: 7, os: "Suse", ver: "12", arch: "x86_64", file: "falcon-sensor-7.34.0-18708.suse12.x86_64.rpm", hash: "d147757b5be0d214e2f69ebedffde5e5a5c4bbc25817126e302f21b49cc49f" }
+  - { id: 8, os: "Suse", ver: "15", arch: "x86_64", file: "falcon-sensor-7.34.0-18708.suse15.x86_64.rpm", hash: "f020bace7c3992f5c3e4d34b7f4101bcdf62233e2a9331c3fa8ebfca4053597a" }
+  - { id: 9, os: "Suse", ver: "15", arch: "aarch64", file: "falcon-sensor-7.34.0-18708.suse15.aarch64.rpm", hash: "171a8873d862926a4d55792221ed44920ccff28ce74e29e755d55774cf819ff8" }
+  - { id: 10, os: "Suse", ver: "12", arch: "s390x", file: "falcon-sensor-7.34.0-18708.suse12.s390x.rpm", hash: "7c47f396c327cde4316c7e9ee4368d8aa2898975b1850f4cf0e63779f016f880" }
+  - { id: 11, os: "Suse", ver: "15", arch: "s390x", file: "falcon-sensor-7.34.0-18708.suse15.s390x.rpm", hash: "d3b4064ec164fcf5b20bd540fed6cfda28d80158f9cb833087f0c6c05ab3a9a9" }
+  # Debian / Ubuntu (DEB 기반)
+  - { id: 22, os: "Debian", ver: "12", arch: "aarch64", file: "falcon-sensor_7.34.0-18708_arm64.deb", hash: "8be6e6ea5150ff03330a42652b02e39d0cbafdf013e817911096655afecefa08" }
+  - { id: 23, os: "Debian", ver: "all", arch: "x86_64", file: "falcon-sensor_7.34.0-18708_amd64.deb", hash: "b5a99132dcbc6aac63e19ec9b45fadfe36ae962750baee808a38d23f1d98cacd" }
+  - { id: 24, os: "Debian", ver: "12", arch: "aarch64", file: "falcon-sensor_7.33.0-18606_arm64.deb", hash: "44701024283e5491d0a360286d8c828dfd4fe2f1df3ea24c9020ef4989624e58" }
+  - { id: 25, os: "Debian", ver: "all", arch: "aarch64", file: "falcon-sensor_7.34.0-18708_arm64.deb", hash: "8be6e6ea5150ff03330a42652b02e39d0cbafdf013e817911096655afecefa08" }
+  - { id: 26, os: "Debian", ver: "all", arch: "s390x", file: "falcon-sensor_7.34.0-18708_s390x.deb", hash: "a7893d670c5c0bcbded3529fa392b9ecfafd27d64eb4943fe5dc05e4304046a5" }
+  - { id: 27, os: "Debian", ver: "all", arch: "x86_64", file: "falcon-sensor_7.34.0-18708_amd64.deb", hash: "b5a99132dcbc6aac63e19ec9b45fadfe36ae962750baee808a38d23f1d98cacd" }
+  # VMware PhotonOS
+  - { id: 30, os: "VMware Photon OS", ver: "5", arch: "x86_64", file: "falcon-sensor-7.34.0-18708.ph5.x86_64.rpm", hash: "ee637c8a6926534b94a98582d66484534926a58e096577831a5f9fb024a269b4" }

@@ -1,0 +1,14 @@
+# falcon 추가
+# - hosts: linux-baf
+- hosts: env_lab
+  gather_facts: yes
+  become: true
+  vars:
+    falcon_cid: "C112C14D255441D296D66650C4006E7C-C3"
+    # local_repo: "/etc/ansible/playbook/files"
+    local_repo: "{{ playbook_dir }}/../files/falcon"
+  vars_files:
+    - "3003_falcon_list.yml"
+  tasks:
+    - import_tasks: 3002_falcon_main.yml
+

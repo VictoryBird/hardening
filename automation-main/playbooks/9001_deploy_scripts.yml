@@ -1,0 +1,43 @@
+---
+- name: Deploy script directory to managed hosts
+  hosts: env_lab
+  gather_facts: false
+  become: true
+
+  vars:
+    local_scripts_dir: "{{ playbook_dir }}/../files/scripts/"
+    remote_scripts_dir: "/opt/ansible/scripts"
+    remote_scripts_owner: "root"
+    remote_scripts_group: "root"
+    remote_dir_mode: "0755"
+    remote_file_mode: "0750"
+
+  tasks:
+    - name: Ensure remote script directory exists
+      ansible.builtin.file:
+        path: "{{ remote_scripts_dir }}"
+        state: directory
+        owner: "{{ remote_scripts_owner }}"
+        group: "{{ remote_scripts_group }}"
+        mode: "{{ remote_dir_mode }}"
+
+    - name: Copy all local scripts to remote directory
+      ansible.builtin.copy:
+        src: "{{ local_scripts_dir }}"
+        dest: "{{ remote_scripts_dir }}/"
+        owner: "{{ remote_scripts_owner }}"
+        group: "{{ remote_scripts_group }}"
+        mode: preserve
+        directory_mode: "{{ remote_dir_mode }}"
+        backup: true
+
+    - name: Ensure shell scripts are executable
+      ansible.builtin.shell: |
+        find "{{ remote_scripts_dir }}" -maxdepth 1 -type f -name "*.sh" -exec chmod "{{ remote_file_mode }}" {} \;
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Show deployed script directory
+      ansible.builtin.debug:
+        msg: "Deployed scripts to {{ remote_scripts_dir }} on {{ inventory_hostname }}"

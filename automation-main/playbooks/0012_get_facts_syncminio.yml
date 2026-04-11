@@ -1,0 +1,94 @@
+---
+- name: Gather facts and save per-host summaries to local text files
+  hosts: env_lab
+  gather_facts: true
+
+  vars:
+    host_facts_base_dir: "{{ control_artifacts_root }}/host_facts"
+
+  pre_tasks:
+    - name: Generate collection timestamp on control node
+      ansible.builtin.set_fact:
+        host_facts_timestamp: "{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
+      run_once: true
+      delegate_to: localhost
+      delegate_facts: true
+      become: false
+
+    - name: Create output directory on control node
+      ansible.builtin.file:
+        path: "{{ host_facts_base_dir }}/{{ hostvars['localhost']['host_facts_timestamp'] }}"
+        state: directory
+        mode: "0755"
+      run_once: true
+      delegate_to: localhost
+      become: false
+
+    - name: Verify mc is available on control node
+      ansible.builtin.command:
+        cmd: mc --version
+      register: mc_version_check
+      changed_when: false
+      run_once: true
+      delegate_to: localhost
+      become: false
+
+    - name: Verify MinIO bucket is reachable via configured alias
+      ansible.builtin.command:
+        cmd: mc ls "{{ minio_alias }}/{{ minio_bucket }}"
+      register: minio_bucket_check
+      changed_when: false
+      run_once: true
+      delegate_to: localhost
+      become: false
+
+  tasks:
+    - name: Show summarized facts
+      ansible.builtin.debug:
+        msg:
+          - "inventory_hostname={{ inventory_hostname }}"
+          - "ansible_host={{ ansible_host | default('undefined') }}"
+          - "hostname={{ ansible_facts['hostname'] | default('undefined') }}"
+          - "fqdn={{ ansible_facts['fqdn'] | default('undefined') }}"
+          - "os_family={{ ansible_facts['os_family'] | default('undefined') }}"
+          - "distribution={{ ansible_facts['distribution'] | default('undefined') }}"
+          - "distribution_version={{ ansible_facts['distribution_version'] | default('undefined') }}"
+          - "kernel={{ ansible_facts['kernel'] | default('undefined') }}"
+          - "architecture={{ ansible_facts['architecture'] | default('undefined') }}"
+          - "python={{ ansible_facts['python']['version']['major'] | default('undefined') }}.{{ ansible_facts['python']['version']['minor'] | default('undefined') }}"
+
+    - name: Save summarized facts to local text file
+      ansible.builtin.copy:
+        dest: "{{ host_facts_base_dir }}/{{ hostvars['localhost']['host_facts_timestamp'] }}/{{ inventory_hostname }}.txt"
+        mode: "0644"
+        content: |
+          inventory_hostname={{ inventory_hostname }}
+          ansible_host={{ ansible_host | default('undefined') }}
+          hostname={{ ansible_facts['hostname'] | default('undefined') }}
+          fqdn={{ ansible_facts['fqdn'] | default('undefined') }}
+          os_family={{ ansible_facts['os_family'] | default('undefined') }}
+          distribution={{ ansible_facts['distribution'] | default('undefined') }}
+          distribution_version={{ ansible_facts['distribution_version'] | default('undefined') }}
+          kernel={{ ansible_facts['kernel'] | default('undefined') }}
+          architecture={{ ansible_facts['architecture'] | default('undefined') }}
+          python={{ ansible_facts['python']['version']['major'] | default('undefined') }}.{{ ansible_facts['python']['version']['minor'] | default('undefined') }}
+      delegate_to: localhost
+      become: false
+
+  post_tasks:
+    - name: Mirror local artifacts tree to MinIO
+      ansible.builtin.command:
+        cmd: >
+          mc mirror --overwrite
+          "{{ control_artifacts_root }}/"
+          "{{ minio_target }}/"
+      register: minio_mirror_result
+      changed_when: true
+      run_once: true
+      delegate_to: localhost
+      become: false
+
+    - name: Show MinIO mirror result
+      ansible.builtin.debug:
+        var: minio_mirror_result.stdout_lines
+      run_once: true

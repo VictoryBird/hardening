@@ -1,0 +1,67 @@
+---
+- name: Remove existing users only
+  hosts: env_lab
+  gather_facts: false
+  become: true
+
+  vars:
+    users_to_remove:
+      - alice
+      - bob
+      - carol
+      - bt14admin01
+      - bt14admin02
+
+    remove_user_home: true
+    confirm_user_removal: true
+
+  tasks:
+    - name: Require explicit confirmation
+      ansible.builtin.assert:
+        that:
+          - confirm_user_removal | bool
+        fail_msg: "Set -e confirm_user_removal=true to allow user removal"
+
+    - name: Assert user removal list is defined
+      ansible.builtin.assert:
+        that:
+          - users_to_remove is defined
+          - users_to_remove | length > 0
+        fail_msg: "users_to_remove is not defined or empty"
+
+    - name: Check whether each target user exists
+      ansible.builtin.command:
+        cmd: "getent passwd {{ item }}"
+      loop: "{{ users_to_remove }}"
+      register: user_lookup_results
+      changed_when: false
+      failed_when: false
+
+    - name: Build list of existing users to remove
+      ansible.builtin.set_fact:
+        existing_users_to_remove: >-
+          {{
+            user_lookup_results.results
+            | selectattr('rc', 'equalto', 0)
+            | map(attribute='item')
+            | list
+          }}
+
+    - name: Show which users will be removed
+      ansible.builtin.debug:
+        msg: >-
+          Users to remove on {{ inventory_hostname }}:
+          {{ existing_users_to_remove | join(', ') if existing_users_to_remove | length > 0 else 'none' }}
+
+    - name: Remove existing users only
+      ansible.builtin.user:
+        name: "{{ item }}"
+        state: absent
+        remove: "{{ remove_user_home }}"
+      loop: "{{ existing_users_to_remove }}"
+
+    - name: Show skipped users because they do not exist
+      ansible.builtin.debug:
+        msg: "User {{ item.item }} does not exist on {{ inventory_hostname }}, skipping"
+      loop: "{{ user_lookup_results.results }}"
+      when: item.rc != 0

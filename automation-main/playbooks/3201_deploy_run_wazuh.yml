@@ -1,0 +1,263 @@
+---
+- name: Linux Agent Deployment (Local Test) # 테스트 필요
+  #hosts: Linux_Nodes
+  hosts: env_lab
+  #connection: local
+  become: yes
+  vars:
+    #minio_url: "http://124.55.202.121:9001"
+    #minio_bucket: "wazuh/Linux"
+    gitlab_base_url: "http://192.168.219.106/operator/automation/-/raw/main/Linux_Wazuh"
+    gitlab_token: "glpat-WfuNWrK2zHYwn6-rxLRa"
+    wazuh_manager: "124.55.202.121"
+    wazuh_agent_group: "default" 
+    #wazuh_agent_name: "BEG-DMZ_1"
+
+  tasks:
+    # --- [1] Install Sysmon, auditd ---
+    - name: Add Microsoft Repository (Ubuntu)
+      shell: |
+        wget -q https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
+        dpkg -i packages-microsoft-prod.deb
+        apt-get update
+      args:
+        creates: /etc/apt/sources.list.d/microsoft-prod.list
+
+    - name: Install SysmonForLinux
+      apt:
+        name: sysmonforlinux
+        state: present
+        update_cache: yes
+
+    - name: Download Sysmon Config from MinIO
+      get_url:
+      #copy:     
+        url: "{{ gitlab_base_url }}/linux_config.xml?private_token={{ gitlab_token }}"
+        #src: "/tmp/linux_config.xml"        
+        dest: /opt/sysmon_config.xml    
+        owner: root
+        group: root
+        mode: '0644'
+        force: yes
+        #remote_src: yes
+      ignore_errors: yes 
+
+    - name: Start Sysmon
+      shell: sysmon -i /opt/sysmon_config.xml -accepteula
+      register: sysmon_res
+      changed_when: "'Sysmon installed' in sysmon_res.stdout"
+      ignore_errors: yes
+      
+    - name: Install auditd
+      apt:
+        name: 
+          - auditd
+          - audispd-plugins
+        state: present
+
+    - name: Add audit rule for root command monitoring
+      copy:
+        dest: /etc/audit/rules.d/wazuh.rules
+        content: |
+        
+            ## ============================================
+            ## WAZUH AUDITD RULESET (FULL)
+            ## Author: z3ro (ROK)
+            ## Description:
+            ## This ruleset is designed for Wazuh detection
+            ## including webshell, persistence, privilege escalation,
+            ## C2 behavior, and system tampering
+            ## BPFdoor Detection
+            ## ============================================
+
+            ## ============================================
+            ## WAZUH AUDITD RULESET (WITH BPFDOOR DETECTION)
+            ## ============================================
+
+            -D
+            -b 8192
+            -f 1
+            --backlog_wait_time 60000
+
+            ## ============================================
+            ## 1. WEBSHELL DETECTION (HUN will check)
+            ## ============================================
+            ## -a always,exit -F arch=b64 -S execve -F dir=/var/www -k webshell
+            ## -a always,exit -F arch=b64 -S execve -F dir=/usr/share/nginx/html -k webshell
+            ## -a always,exit -F arch=b64 -S execve -F dir=/srv/http -k webshell
+
+            ## ============================================
+            ## 2. SYSTEM BINARY TAMPERING
+            ## ============================================
+            -w /usr/bin -p wa -k bin_tamper
+            -w /usr/sbin -p wa -k bin_tamper
+            -w /bin -p wa -k bin_tamper
+            -w /sbin -p wa -k bin_tamper
+
+            ## ============================================
+            ## 3. PRIVILEGED SHELL ABUSE
+            ## ============================================
+            -a always,exit -F arch=b64 -S execve -F euid=0 -F auid>=1000 -k daemon_shell
+
+            ## ============================================
+            ## 4. SSH KEY PERSISTENCE (after ssh key setting)
+            ## ============================================
+            #-w /root/.ssh/authorized_keys -p wa -k ssh_key
+            -w /home/ -p wa -k ssh_key
+
+            ## ============================================
+            ## 5. FILE ATTRIBUTE TAMPERING
+            ## ============================================
+            -a always,exit -F arch=b64 -S execve -F path=/usr/bin/chattr -k chattr
+
+            ## ============================================
+            ## 6. CRON PERSISTENCE
+            ## ============================================
+            -w /etc/crontab -p wa -k cron_persist
+            -w /etc/cron.d/ -p wa -k cron_persist
+            -w /var/spool/cron/ -p wa -k cron_persist
+
+            ## ============================================
+            ## 7. SYSTEMD PERSISTENCE
+            ## ============================================
+            -w /etc/systemd/system -p wa -k systemd_persist
+
+            ## ============================================
+            ## 8. SUDOERS (PRIV ESC)
+            ## ============================================
+            -w /etc/sudoers -p wa -k priv_esc
+            -w /etc/sudoers.d/ -p wa -k priv_esc
+
+            ## ============================================
+            ## 9. NETWORK TOOL EXECUTION (C2)
+            ## ============================================
+            -a always,exit -F arch=b64 -S execve -F exe=/usr/bin/nc -k reverse_shell
+            -a always,exit -F arch=b64 -S execve -F exe=/usr/bin/ncat -k reverse_shell
+            -a always,exit -F arch=b64 -S execve -F exe=/usr/bin/socat -k reverse_shell
+            -a always,exit -F arch=b64 -S execve -F exe=/usr/bin/curl -k network_tool
+            -a always,exit -F arch=b64 -S execve -F exe=/usr/bin/wget -k network_tool
+
+            ## ============================================
+            ## 10. SHELL EXECUTION
+            ## ============================================
+            -a always,exit -F arch=b64 -S execve -F exe=/bin/bash -k shell_exec
+            -a always,exit -F arch=b64 -S execve -F exe=/bin/sh -k shell_exec
+
+            ## ============================================
+            ## 11. ACCOUNT MANIPULATION
+            ## ============================================
+            -w /etc/passwd -p wa -k account_change
+            -w /etc/shadow -p wa -k account_change
+            -w /etc/group -p wa -k account_change
+
+            ## ============================================
+            ## 12. KERNEL MODULE TAMPERING
+            ## ============================================
+            -w /sbin/insmod -p x -k kernel_mod
+            -w /sbin/rmmod -p x -k kernel_mod
+            -w /sbin/modprobe -p x -k kernel_mod
+
+            ## ============================================
+            ## 13. LOG TAMPERING
+            ## ============================================
+            -w /var/log/ -p wa -k log_tamper
+
+            ## ============================================
+            ## 14. DOCKER ABUSE
+            ## ============================================
+            -w /usr/bin/docker -p x -k docker_exec
+            -w /var/lib/docker/ -p wa -k docker_change
+
+
+            ## ============================================
+            ## 15. BPFDOOR DETECTION
+            ## ============================================
+
+            ## Detect raw socket creation (used by BPFdoor)
+            -a always,exit -F arch=b64 -S socket -F a0=2 -F a1=3 -k bpfdoor_socket
+
+            ## Detect setsockopt (BPF attach behavior)
+            -a always,exit -F arch=b64 -S setsockopt -k bpfdoor_setsockopt
+
+            ## Detect suspicious network syscalls
+            -a always,exit -F arch=b64 -S connect -k network_connect
+            -a always,exit -F arch=b64 -S bind -k network_bind
+
+            ## Detect access to BPF device
+            -w /dev/bpf -p rwxa -k bpfdoor_dev
+
+            ## Detect tcpdump (often abused for packet capture)
+            -a always,exit -F arch=b64 -S execve -F exe=/usr/sbin/tcpdump -k packet_sniff
+
+        owner: root
+        group: root
+        mode: '0640'
+
+    - name: Restart auditd
+      systemd:
+        name: auditd
+        enabled: yes
+        state: restarted    
+        
+    # --- [2] Wazuh 설치 ---
+    - name: Add Wazuh Repository Key
+      apt_key:
+        url: https://packages.wazuh.com/key/GPG-KEY-WAZUH
+        state: present
+
+    - name: Add Wazuh Repository
+      apt_repository:
+        repo: "deb https://packages.wazuh.com/4.x/apt/ stable main"
+        state: present
+
+    - name: Install Wazuh Agent
+      apt:
+        name: wazuh-agent
+        state: latest
+      environment:
+        WAZUH_MANAGER: "{{ wazuh_manager }}"
+        WAZUH_AGENT_GROUP: "{{ wazuh_agent_group }}"
+        
+    - name: Create Wazuh etc directory
+      file:
+         path: /var/ossec/etc
+         state: directory
+         owner: root
+         group: wazuh
+         mode: '0770'
+
+    - name: Download ossec.conf from MinIO
+      get_url:
+      #copy:
+        url: "{{ gitlab_base_url }}/ossec.conf?private_token={{ gitlab_token }}"
+        #src: "/tmp/ossec.conf"        
+        dest: /var/ossec/etc/ossec.conf
+        owner: root
+        group: wazuh
+        mode: '0660'
+        force: yes
+        #remote_src: yes
+#        ignore_errors: yes
+
+    - name: Register Agent and Get Auth Key
+      command: "/var/ossec/bin/agent-auth -m {{ wazuh_manager }} -p 1515 -A {{ inventory_hostname }} -D /var/ossec"
+      register: auth_res
+      changed_when: "'Valid key received' in auth_res.stdout"
+      ignore_errors: yes
+
+    - name: Fix permissions for Client Keys
+      file:
+        path: /var/ossec/etc/client.keys
+        state: touch
+        owner: root
+        group: wazuh
+        mode: '0640'
+
+
+    # --- [3] 서비스 기동 ---
+    - name: Enable and Restart Wazuh Agent
+      systemd:
+        name: wazuh-agent
+        enabled: yes
+        state: restarted
+        daemon_reload: yes
