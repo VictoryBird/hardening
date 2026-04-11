@@ -503,6 +503,11 @@ _deb_tunnel_dns_lock_resolv() {
         return 0
     fi
 
+    # Detection order:
+    # 1. systemd-resolved running + resolv.conf is symlink → systemd-resolved manages DNS
+    # 2. NetworkManager running + /etc/NetworkManager/ exists → NM manages DNS
+    # 3. Neither → direct resolv.conf management (chattr)
+
     if systemctl is-active systemd-resolved &>/dev/null 2>&1; then
         if [[ -L "${resolv}" ]]; then
             log_info "  /etc/resolv.conf is symlink (systemd-resolved managed)"
@@ -518,7 +523,20 @@ _deb_tunnel_dns_lock_resolv() {
             } > "${resolved_conf}"
             systemctl restart systemd-resolved 2>/dev/null || true
             log_ok "  systemd-resolved DNS settings applied: ${resolved_conf}"
+            return 0
         fi
+    fi
+
+    if systemctl is-active NetworkManager &>/dev/null 2>&1 && [[ -d /etc/NetworkManager ]]; then
+        log_info "  NetworkManager manages DNS — skipping chattr on resolv.conf"
+        local nm_dns_conf="/etc/NetworkManager/conf.d/99-dns-hardening.conf"
+        mkdir -p /etc/NetworkManager/conf.d
+        {
+            echo "# DNS tunnel defense — auto-generated: ${TIMESTAMP}"
+            echo "[main]"
+            echo "dns=default"
+        } > "${nm_dns_conf}"
+        log_ok "  NetworkManager DNS settings applied: ${nm_dns_conf}"
         return 0
     fi
 
@@ -1060,7 +1078,31 @@ setup_login_defs() {
 setup_pam_faillock() {
     log_info "===== [16] pam_faillock account lockout ====="
     if ! find /usr/lib /lib -name 'pam_faillock.so' -print -quit 2>/dev/null | grep -q .; then
-        log_warn "pam_faillock module not found — check libpam-modules"
+        # pam_faillock not available — try pam_tally2 fallback (Ubuntu 20.04 and earlier)
+        if find /usr/lib /lib -name 'pam_tally2.so' -print -quit 2>/dev/null | grep -q .; then
+            log_warn "pam_faillock not found — falling back to pam_tally2"
+            local common_auth="/etc/pam.d/common-auth"
+            local common_account="/etc/pam.d/common-account"
+            backup_file "$common_auth"
+            backup_file "$common_account"
+            local tally2_auth_line="auth required pam_tally2.so deny=${DEB_FAILLOCK_DENY} unlock_time=${DEB_FAILLOCK_UNLOCK_TIME} onerr=fail"
+            local tally2_account_line="account required pam_tally2.so"
+            if ! grep -qF 'pam_tally2.so' "$common_auth" 2>/dev/null; then
+                sed -i "1s|^|${tally2_auth_line}\n|" "$common_auth"
+                log_ok "pam_tally2 auth line added to $common_auth"
+            else
+                log_skip "pam_tally2 already present in $common_auth"
+            fi
+            if ! grep -qF 'pam_tally2.so' "$common_account" 2>/dev/null; then
+                sed -i "1s|^|${tally2_account_line}\n|" "$common_account"
+                log_ok "pam_tally2 account line added to $common_account"
+            else
+                log_skip "pam_tally2 already present in $common_account"
+            fi
+            log_ok "pam_tally2 fallback configured (deny=${DEB_FAILLOCK_DENY}, unlock_time=${DEB_FAILLOCK_UNLOCK_TIME}s)"
+        else
+            log_warn "Neither pam_faillock nor pam_tally2 found — skipping account lockout"
+        fi
         return 0
     fi
     if [[ ! -d /usr/share/pam-configs ]]; then
@@ -2269,6 +2311,20 @@ check_pam_policy() {
     if [[ -f /etc/pam.d/common-auth ]]; then
         if grep -q 'pam_faillock' /etc/pam.d/common-auth 2>/dev/null; then
             log_ok "PAM common-auth has faillock"
+        elif find /usr/lib /lib -name 'pam_tally2.so' -print -quit 2>/dev/null | grep -q .; then
+            # System uses pam_tally2 fallback (Ubuntu 20.04 and earlier)
+            if grep -q 'pam_tally2' /etc/pam.d/common-auth 2>/dev/null; then
+                log_ok "PAM common-auth has pam_tally2 (faillock fallback)"
+            else
+                log_drift "PAM common-auth missing pam_tally2 account lockout"
+            fi
+            if [[ -f /etc/pam.d/common-account ]]; then
+                if grep -q 'pam_tally2' /etc/pam.d/common-account 2>/dev/null; then
+                    log_ok "PAM common-account has pam_tally2"
+                else
+                    log_drift "PAM common-account missing pam_tally2"
+                fi
+            fi
         else
             log_drift "PAM common-auth missing faillock"
         fi
@@ -2758,19 +2814,38 @@ check_tunnel_defense() {
     fi
 
     # resolv.conf immutable lock check
-    if command -v lsattr &>/dev/null; then
+    # Detection order mirrors _deb_tunnel_dns_lock_resolv:
+    # 1. systemd-resolved + symlink → no chattr needed
+    # 2. NetworkManager + /etc/NetworkManager/ → check NM conf.d file
+    # 3. direct management → check chattr
+    if systemctl is-active systemd-resolved &>/dev/null 2>&1 && [[ -L /etc/resolv.conf ]]; then
+        log_ok "  /etc/resolv.conf is symlink (systemd-resolved managed — chattr not needed)"
+    elif systemctl is-active NetworkManager &>/dev/null 2>&1 && [[ -d /etc/NetworkManager ]]; then
+        local nm_dns_conf="/etc/NetworkManager/conf.d/99-dns-hardening.conf"
+        if [[ -f "${nm_dns_conf}" ]]; then
+            log_ok "  NetworkManager DNS hardening conf present: ${nm_dns_conf}"
+        else
+            log_drift "  NetworkManager DNS hardening conf missing: ${nm_dns_conf}"
+            if [[ "$MODE" == "auto-restore" ]]; then
+                mkdir -p /etc/NetworkManager/conf.d
+                {
+                    echo "# DNS tunnel defense — auto-generated: ${TIMESTAMP}"
+                    echo "[main]"
+                    echo "dns=default"
+                } > "${nm_dns_conf}" && \
+                    log_restore "  NetworkManager DNS hardening conf re-created" || \
+                    log_fail "  NetworkManager DNS hardening conf re-create failed"
+            fi
+        fi
+    elif command -v lsattr &>/dev/null; then
         if lsattr /etc/resolv.conf 2>/dev/null | grep -q '^....i'; then
             log_ok "  /etc/resolv.conf immutable lock (chattr +i) active"
         else
-            if [[ -L /etc/resolv.conf ]]; then
-                log_ok "  /etc/resolv.conf is symlink (systemd-resolved managed — chattr not needed)"
-            else
-                log_drift "  /etc/resolv.conf immutable lock removed"
-                if [[ "$MODE" == "auto-restore" ]]; then
-                    chattr +i /etc/resolv.conf 2>/dev/null && \
-                        log_restore "  resolv.conf immutable lock re-applied" || \
-                        log_fail "  resolv.conf immutable lock re-apply failed"
-                fi
+            log_drift "  /etc/resolv.conf immutable lock removed"
+            if [[ "$MODE" == "auto-restore" ]]; then
+                chattr +i /etc/resolv.conf 2>/dev/null && \
+                    log_restore "  resolv.conf immutable lock re-applied" || \
+                    log_fail "  resolv.conf immutable lock re-apply failed"
             fi
         fi
     fi

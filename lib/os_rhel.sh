@@ -212,11 +212,36 @@ RHEL_RESTORE_BACKUP_DIR=""
 ###############################################################################
 
 pkg_install() {
-    $RHEL_PKG_MGR install -y "$@"
+    # Strip dnf-only flags when using yum (yum does not support --allowerasing,
+    # --best, --nobest, or --skip-broken in the same form as dnf).
+    if [[ "$RHEL_PKG_MGR" == "yum" ]]; then
+        local _args=()
+        for _a in "$@"; do
+            case "$_a" in
+                --allowerasing|--best|--nobest) ;;   # drop dnf-only flags
+                *) _args+=("$_a") ;;
+            esac
+        done
+        yum install -y "${_args[@]}"
+    else
+        dnf install -y "$@"
+    fi
 }
 
 pkg_remove() {
-    $RHEL_PKG_MGR remove -y "$@" >/dev/null 2>&1 || true
+    # Strip dnf-only flags when using yum.
+    if [[ "$RHEL_PKG_MGR" == "yum" ]]; then
+        local _args=()
+        for _a in "$@"; do
+            case "$_a" in
+                --allowerasing|--best|--nobest) ;;   # drop dnf-only flags
+                *) _args+=("$_a") ;;
+            esac
+        done
+        yum remove -y "${_args[@]}" >/dev/null 2>&1 || true
+    else
+        dnf remove -y "$@" >/dev/null 2>&1 || true
+    fi
 }
 
 pkg_is_installed() {
@@ -409,19 +434,10 @@ _rhel_tunnel_dns_lock_resolv() {
         return 0
     fi
 
-    # NetworkManager typically manages resolv.conf
-    if systemctl is-active NetworkManager &>/dev/null 2>&1; then
-        local nm_dns_conf="/etc/NetworkManager/conf.d/99-tunnel-hardening.conf"
-        mkdir -p /etc/NetworkManager/conf.d
-        if [[ ! -f "$nm_dns_conf" ]]; then
-            {
-                echo "# DNS tunnel defense — auto-generated: ${TIMESTAMP}"
-                echo "[main]"
-                echo "dns=default"
-            } > "${nm_dns_conf}"
-            log_ok "  NetworkManager DNS settings applied: ${nm_dns_conf}"
-        fi
-    fi
+    # Detection order:
+    # 1. systemd-resolved running + resolv.conf is symlink → systemd-resolved manages DNS
+    # 2. NetworkManager running + /etc/NetworkManager/ exists → NM manages DNS
+    # 3. Neither → direct resolv.conf management (chattr)
 
     # systemd-resolved (less common on RHEL, but possible)
     if systemctl is-active systemd-resolved &>/dev/null 2>&1; then
@@ -440,6 +456,20 @@ _rhel_tunnel_dns_lock_resolv() {
             log_ok "  systemd-resolved DNS settings applied: ${resolved_conf}"
             return 0
         fi
+    fi
+
+    # NetworkManager typically manages resolv.conf on RHEL
+    if systemctl is-active NetworkManager &>/dev/null 2>&1 && [[ -d /etc/NetworkManager ]]; then
+        log_info "  NetworkManager manages DNS — skipping chattr on resolv.conf"
+        local nm_dns_conf="/etc/NetworkManager/conf.d/99-dns-hardening.conf"
+        mkdir -p /etc/NetworkManager/conf.d
+        {
+            echo "# DNS tunnel defense — auto-generated: ${TIMESTAMP}"
+            echo "[main]"
+            echo "dns=default"
+        } > "${nm_dns_conf}"
+        log_ok "  NetworkManager DNS settings applied: ${nm_dns_conf}"
+        return 0
     fi
 
     backup_file "${resolv}"
@@ -510,7 +540,8 @@ setup_pam() {
         log_warn "pwquality.conf not found even after install attempt"
     fi
 
-    # Enable pwquality via authselect if available
+    # Enable pwquality via authselect if available, else fall back to authconfig
+    # (CentOS 7 / RHEL 7) or direct PAM file edits.
     if command -v authselect &>/dev/null; then
         local current_profile
         current_profile=$(authselect current -r 2>/dev/null || true)
@@ -528,8 +559,13 @@ setup_pam() {
                 log_ok "authselect: sssd profile with-pwquality selected" || \
                 log_warn "authselect select failed — PAM config may need manual review"
         fi
+    elif command -v authconfig &>/dev/null; then
+        # RHEL 7 / CentOS 7 fallback: use authconfig to enable pwquality
+        authconfig --enablepwquality --update 2>/dev/null && \
+            log_ok "authconfig: pwquality enabled" || \
+            log_warn "authconfig --enablepwquality failed — pwquality.conf applied directly"
     else
-        log_info "authselect not available — pwquality.conf applied directly"
+        log_info "Neither authselect nor authconfig available — pwquality.conf applied directly"
     fi
 }
 
@@ -2656,19 +2692,38 @@ check_tunnel_defense() {
     fi
 
     # resolv.conf immutable lock check
-    if command -v lsattr &>/dev/null; then
+    # Detection order mirrors _rhel_tunnel_dns_lock_resolv:
+    # 1. systemd-resolved + symlink → no chattr needed
+    # 2. NetworkManager + /etc/NetworkManager/ → check NM conf.d file
+    # 3. direct management → check chattr
+    if systemctl is-active systemd-resolved &>/dev/null 2>&1 && [[ -L /etc/resolv.conf ]]; then
+        log_ok "  /etc/resolv.conf is symlink (systemd-resolved managed — chattr not needed)"
+    elif systemctl is-active NetworkManager &>/dev/null 2>&1 && [[ -d /etc/NetworkManager ]]; then
+        local nm_dns_conf="/etc/NetworkManager/conf.d/99-dns-hardening.conf"
+        if [[ -f "${nm_dns_conf}" ]]; then
+            log_ok "  NetworkManager DNS hardening conf present: ${nm_dns_conf}"
+        else
+            log_drift "  NetworkManager DNS hardening conf missing: ${nm_dns_conf}"
+            if [[ "$MODE" == "auto-restore" ]]; then
+                mkdir -p /etc/NetworkManager/conf.d
+                {
+                    echo "# DNS tunnel defense — auto-generated: ${TIMESTAMP}"
+                    echo "[main]"
+                    echo "dns=default"
+                } > "${nm_dns_conf}" && \
+                    log_restore "  NetworkManager DNS hardening conf re-created" || \
+                    log_fail "  NetworkManager DNS hardening conf re-create failed"
+            fi
+        fi
+    elif command -v lsattr &>/dev/null; then
         if lsattr /etc/resolv.conf 2>/dev/null | grep -q '^....i'; then
             log_ok "  /etc/resolv.conf immutable lock (chattr +i) active"
         else
-            if [[ -L /etc/resolv.conf ]]; then
-                log_ok "  /etc/resolv.conf is symlink (managed — chattr not needed)"
-            else
-                log_drift "  /etc/resolv.conf immutable lock removed"
-                if [[ "$MODE" == "auto-restore" ]]; then
-                    chattr +i /etc/resolv.conf 2>/dev/null && \
-                        log_restore "  resolv.conf immutable lock re-applied" || \
-                        log_fail "  resolv.conf immutable lock re-apply failed"
-                fi
+            log_drift "  /etc/resolv.conf immutable lock removed"
+            if [[ "$MODE" == "auto-restore" ]]; then
+                chattr +i /etc/resolv.conf 2>/dev/null && \
+                    log_restore "  resolv.conf immutable lock re-applied" || \
+                    log_fail "  resolv.conf immutable lock re-apply failed"
             fi
         fi
     fi
