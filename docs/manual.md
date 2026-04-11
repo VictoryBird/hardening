@@ -2,7 +2,7 @@
 
 ## 1. 개요
 
-이 문서는 다중 OS 환경(Debian/Ubuntu, RHEL/CentOS, FreeBSD, macOS)을 지원하는 ��스템 하드닝 스크립트 프레임워크의 사용 매뉴얼입니다. 비하드닝 전문가 및 자동화 팀을 대상으로 작성되었습니다.
+이 문서는 다중 OS 환경(Debian/Ubuntu, RHEL/CentOS, FreeBSD, macOS)을 지원하는 시스템 하드닝 스크립트 프레임워크의 사용 매뉴얼입니다. 비하드닝 전문가 및 자동화 팀을 대상으로 작성되었습니다.
 
 ### 1.1 시스템 구성도
 
@@ -15,7 +15,7 @@ config.sh (설정값)
 01_baseline_hardening.sh (오케스트레이터)
     │
     ├── lib/common.sh         (OS 감지, 로깅, 백업)
-    ├���─ lib/safety_guards.sh  (보호 계정, 네트워크, gtmon 가드)
+    ├── lib/safety_guards.sh  (보호 계정, 네트워크, gtmon 가드)
     └── lib/os_<family>.sh    (OS별 어댑터)
             │
             ├── setup_pam()                [1] PAM 패스워드 정책
@@ -29,7 +29,7 @@ config.sh (설정값)
             └── create_baseline_snapshot() → /var/backups/hardening/baseline/
 ```
 
-**점검/복원 흐�� (02 스크립트)**
+**점검/복원 흐름 (02 스크립트)**
 
 ```
 config.sh (설정값)
@@ -58,11 +58,11 @@ hardening/
 ├── 01_baseline_hardening.sh           # 초기 하드닝 오케스트레이터
 ├── 02_check_and_restore.sh            # 점검/복원 오케스트레이터
 ├── lib/
-│   ├���─ common.sh                      # 공통 라이브러리 (OS 감지, 로깅, 백업)
+│   ├── common.sh                      # 공통 라이브러리 (OS 감지, 로깅, 백업)
 │   ├── safety_guards.sh               # 보호 계정/네트워크/에이전트 가드
 │   ├── os_debian.sh                   # Debian/Ubuntu 어댑터
 │   ├── os_rhel.sh                     # RHEL/CentOS/Rocky 어댑터
-│   ├─�� os_freebsd.sh                  # FreeBSD ��댑터
+│   ├── os_freebsd.sh                  # FreeBSD 어댑터
 │   └── os_macos.sh                    # macOS 어댑터
 ├── ansible/
 │   ├── playbook_harden.yml            # 하드닝 실행 플레이북
@@ -70,8 +70,8 @@ hardening/
 │   ├── README.md                      # Ansible 사용 가이드
 │   ├── host_vars/
 │   │   └── _template.yml              # 호스트별 설정 오버라이드 템플릿
-│   ���── roles/hardening/
-│       ��── tasks/
+│   ├── roles/hardening/
+│       └── tasks/
 │       │   ├── main.yml               # 역할 진입점
 │       │   ├── discover.yml           # 서버 자동 탐색 (포트, 에이전트, SSH 키)
 │       │   ├── deploy.yml             # 스크립트 배포
@@ -307,14 +307,14 @@ HARDENING_PROFILE=web SSH_PASSWORD_AUTH=yes sudo ./01_baseline_hardening.sh
 
 #### Ansible / 자동화 설정
 
-| 항목명 | 기본�� | 설�� | 변경 시 영향 |
+| 항목명 | 기본값 | 설명 | 변경 시 영향 |
 |--------|--------|------|--------------|
 | `ANSIBLE_ACCOUNT` | (비어 있음) | 자동화 도구 접속 계정명 | 이 계정은 nologin 변환/잠금에서 제외됨 |
 | `KILL_OTHER_SESSIONS` | `true` | 하드닝 후 다른 SSH 세션 종료 여부 | `false`로 설정하면 다른 SSH 세션 유지 (Ansible 실행 시 필수) |
 
 #### SSH 설정
 
-| 항목명 | ���본값 | 설명 | 변경 시 영향 |
+| 항목명 | 기본값 | 설명 | 변경 시 영향 |
 |--------|--------|------|--------------|
 | `SSH_PERMIT_ROOT_LOGIN` | `prohibit-password` | root SSH 로그인 방식 | `no`: 완전 차단, `prohibit-password`: 키만 허용, `yes`: 모두 허용 |
 | `SSH_PASSWORD_AUTH` | `no` | 패스워드 인증 허용 | `no`로 설정 시 SSH 키 없으면 접속 불가 (스크립트가 키 없으면 자동으로 `yes` 유지) |
@@ -325,9 +325,9 @@ HARDENING_PROFILE=web SSH_PASSWORD_AUTH=yes sudo ./01_baseline_hardening.sh
 
 #### 패스워드 정책
 
-| 항목명 | 기본값 | ���명 | 변경 시 영향 |
+| 항목명 | 기본값 | 설명 | 변경 시 영향 |
 |--------|--------|------|--------------|
-| `PASS_MAX_DAYS` | `90` | 패스워드 최대 사용 기간 (일) | 낮추면 패스워드 변경 주기가 ���아짐 |
+| `PASS_MAX_DAYS` | `90` | 패스워드 최대 사용 기간 (일) | 낮추면 패스워드 변경 주기가 짧아짐 |
 | `PASS_MIN_DAYS` | `7` | 패스워드 최소 사용 기간 (일) | 변경 후 이 기간 동안 재변경 불가 |
 | `PASS_WARN_AGE` | `14` | 패스워드 만료 경고 기간 (일) | 만료 전 이 일수부터 경고 표시 |
 | `LOGIN_RETRIES` | `3` | 로그인 재시도 허용 횟수 | 이 횟수 초과 시 세션 종료 |
@@ -341,7 +341,7 @@ HARDENING_PROFILE=web SSH_PASSWORD_AUTH=yes sudo ./01_baseline_hardening.sh
 
 #### 커널 모듈 차단
 
-| 항목명 | 기본값 | ���명 | 변경 시 영�� |
+| 항목명 | 기본값 | 설명 | 변경 시 영향 |
 |--------|--------|------|--------------|
 | `BLOCKED_MODULES` | `cramfs freevxfs jffs2 hfs hfsplus squashfs udf vfat usb-storage` | 차단할 커널 모듈 | 해당 파일시스템/USB 저장장치 사용 불가 (macOS에서는 무시) |
 
@@ -361,14 +361,14 @@ HARDENING_PROFILE=web SSH_PASSWORD_AUTH=yes sudo ./01_baseline_hardening.sh
 
 #### 마운트 하드닝
 
-| 항목명 | 기본값 | ���명 | 변경 시 영향 |
+| 항목명 | 기본값 | 설명 | 변경 시 영향 |
 |--------|--------|------|--------------|
 | `SHM_NOEXEC` | `true` | /dev/shm에 noexec 적용 | `false`로 설정하면 공유 메모리에서 실행 파일 허용 |
 | `HIDEPID_ENABLED` | `true` | /proc에 hidepid=2 적용 | `false`로 설정하면 다른 사용자의 프로세스 정보 노출 |
 
 #### 계정 잠금 정책
 
-| 항목명 | 기���값 | 설명 | 변경 시 영향 |
+| 항목명 | 기본값 | 설명 | 변경 시 영향 |
 |--------|--------|------|--------------|
 | `FAILLOCK_DENY` | `5` | 로그인 실패 허용 횟수 | 이 횟수 초과 시 계정 잠금 |
 | `FAILLOCK_UNLOCK_TIME` | `900` | 잠금 해제 대기 시간 (초) | 900초 = 15분 후 자동 잠금 해제 |
@@ -394,7 +394,7 @@ HARDENING_PROFILE=web SSH_PASSWORD_AUTH=yes sudo ./01_baseline_hardening.sh
 
 #### PAM 패스워드 품질
 
-| 항목명 | 기본값 | 설��� | 변경 시 영��� |
+| 항목명 | 기본값 | 설명 | 변경 시 영향 |
 |--------|--------|------|--------------|
 | `PAM_PASSWDQC_MIN` | `disabled,24,12,8,7` | Debian: passwdqc min 파라미터 | 형식: `disabled,1종류,2종류,passphrase,3종류,4종류` 최소 길이 |
 | `PAM_PWQUALITY_MINLEN` | `8` | RHEL: pwquality 최소 패스워드 길이 | RHEL 계열에서 패스워드 최소 길이 |
@@ -414,10 +414,10 @@ DISABLE_SERVICES="avahi-daemon cups cups-browsed bluetooth postfix"
 
 이렇게 설정하면: 인바운드 22/tcp, 80/tcp, 443/tcp, 8443/tcp만 허용되고, SSH 패스워드 인증이 가능하며, postfix를 포함한 불필요 서비스가 비활성화됩니다.
 
-#### 라우터/게이트웨이 ��정
+#### 라우터/게이트웨이 설정
 
 ```bash
-# config.sh ���정
+# config.sh 설정
 HARDENING_PROFILE="base"
 SYSCTL_DISABLE_IP_FORWARD="false"   # IP 포워딩 유지 (필수!)
 TUNNEL_DEFENSE_ENABLED="false"      # 라우터에서는 터널 방어 비활성화
@@ -566,7 +566,7 @@ ufw reload
 | `ClientAliveCountMax` | `2` | 무응답 허용 횟수 | 2회 무응답 시 연결 종료 (총 10분) |
 | `LoginGraceTime` | `60` | 로그인 유예 (초) | 60초 내 인증 미완료 시 종료 |
 | `Banner` | `/etc/issue.net` | 로그인 배너 | 법적 경고 배너 표시 |
-| `UsePAM` | `yes` | PAM 사용 | PAM 인증 모듈 활성��� |
+| `UsePAM` | `yes` | PAM 사용 | PAM 인증 모듈 활성화 |
 | `HostbasedAuthentication` | `no` | 호스트 기반 인증 | 비활성화 (보안 취약) |
 | `IgnoreRhosts` | `yes` | .rhosts 무시 | .rhosts 파일 무시 |
 | `MaxSessions` | `4` | 최대 세션 수 | 연결당 최대 4개 세션 |
@@ -618,7 +618,7 @@ systemctl reload sshd
 | `/usr/bin/nmap` | 네트워크 스캔 도구 |
 | `/usr/bin/bash`, `/usr/bin/dash` | 셸 -- root SUID 위험 |
 | `/usr/bin/find` | 명령 실행 가능 (`-exec`) |
-| `/usr/bin/less` | 셸 이스케이프 가�� |
+| `/usr/bin/less` | 셸 이스케이프 가능 |
 | `/usr/bin/pkexec` | 권한 상승 도구 |
 | `/usr/bin/at` | 예약 실행 |
 | `/usr/bin/newgrp` | 그룹 변경 |
@@ -641,7 +641,7 @@ systemctl reload sshd
 
 1. 현재 스크립트를 실행 중인 SSH 세션의 sshd PID를 추적
 2. `pgrep -x sshd`로 모든 sshd 프로세스를 나열
-3. 현재 세션, 마스터 sshd(PPID=1), `gt` 계정, `ANSIBLE_ACCOUNT` ��션은 **제외**
+3. 현재 세션, 마스터 sshd(PPID=1), `gt` 계정, `ANSIBLE_ACCOUNT` 세션은 **제외**
 4. 나머지 세션에 `kill -HUP` 전송
 5. macOS에서는 **실행하지 않음**
 
@@ -820,14 +820,14 @@ fstab에 엔트리를 추가하고, `mount -o remount`로 즉시 적용합니다
 
 | 규칙 | 방향 | 설명 |
 |------|------|------|
-| `TUNNEL_ICMP_LARGE_IN` | 인바운드 | ICMP payload > `TUNNEL_ICMP_MAX_PAYLOAD`(128) 바이트 차��� |
+| `TUNNEL_ICMP_LARGE_IN` | 인바운드 | ICMP payload > `TUNNEL_ICMP_MAX_PAYLOAD`(128) 바이트 차단 |
 | `TUNNEL_ICMP_LARGE_OUT` | 아웃바운드 | 대형 ICMP 아웃바운드 차단 |
 | `TUNNEL_ICMP6_LARGE_IN` | 인바운드 | ICMPv6 echo-request 대형 패킷 차단 |
 | `TUNNEL_ICMP6_LARGE_OUT` | 아웃바운드 | ICMPv6 echo-request 대형 패킷 차단 |
 
 실제 차단 크기: `20(IP 헤더) + 8(ICMP 헤더) + 128(payload) = 156` 바이트 이상
 
-**참고**: 일반 ping(echo-request)은 차단하지 않습니다. 워크스테이션에서 진단용 ping이 필요하기 ���문입니다.
+**참고**: 일반 ping(echo-request)은 차단하지 않습니다. 워크스테이션에서 진단용 ping이 필요하기 때문입니다.
 
 #### DNS over TCP 터널 방어
 
@@ -985,7 +985,7 @@ sudo ./02_check_and_restore.sh --auto-restore
 | C1 | sysctl 설정 | `sysctl_baseline.conf` | key=value 행별 비교, `sysctl -n <key>`로 현재값 확인 | 현재값이 베이스라인과 다름 | `sysctl -w <key>=<value>` |
 | C2 | 파일 권한 | `file_permissions_baseline.txt` | `stat -c '%a'`와 `stat -c '%U:%G'` 비교 | 권한 또는 소유자 변경됨 | `chmod`/`chown` 복원 |
 | C3 | SUID 파일 | `suid_files_baseline.txt` | `find / -perm -4000` 결과와 `comm -13` 비교 | 베이스라인에 없는 새 SUID 파일 발견 | `chmod u-s` |
-| C4 | 서비스 상��� | `enabled_services_baseline.txt`, `active_services_baseline.txt` | `systemctl list-unit-files`와 `comm -13` 비교 | 베이스라인에 없는 새 활성/실행 서비스 | `systemctl disable --now` / `systemctl stop` |
+| C4 | 서비스 상태 | `enabled_services_baseline.txt`, `active_services_baseline.txt` | `systemctl list-unit-files`와 `comm -13` 비교 | 베이스라인에 없는 새 활성/실행 서비스 | `systemctl disable --now` / `systemctl stop` |
 | C5 | 로그인 계정 | `login_accounts_baseline.txt` | `/etc/passwd`에서 로그인 가능 계정 추출 후 `comm -13` | 베이스라인에 없는 새 로그인 가능 계정 | `chsh -s /usr/sbin/nologin` |
 | C6 | UFW 방화벽 | `ufw_rules_baseline.txt` | `ufw status` 출력 비교 | UFW 비활성화, 정책 변경, 규칙 추가/삭제, 터널 블록 누락 | UFW 재활성화, 규칙 복원, `ufw reload` |
 | C7 | sudoers NOPASSWD | - | `grep NOPASSWD` (gt 라인 제외) | gt 이외의 NOPASSWD 발견 | `sed`로 NOPASSWD 제거 |
@@ -999,8 +999,8 @@ sudo ./02_check_and_restore.sh --auto-restore
 | C15 | SSH 설정 | `sshd_effective_baseline.txt` | `sshd -T`로 현재 설정 확인, 키별 비교 | SSH 설정이 베이스라인과 다름 | 드롭인 파일 재생성 후 `systemctl reload sshd` |
 | C16 | 악성 cron/at | - | crontab 내용에서 의심 패턴(nc, bash -i, /dev/tcp 등) 탐색 | 의심 패턴 발견 또는 비root crontab 존재 | 리포트만 |
 | C17 | 네트워크 포트 | `listening_ports_baseline.txt` | `ss -tlnp` 비교 | 새로운 리스닝 포트 또는 의심 포트(4444, 31337 등) 발견 | 리포트만 |
-| C18 | 의심 프로세스 | - | 삭제된 바이너리 실행, 의심 패턴, /tmp 경로 실행 탐색 | 의심 프로세스 발견 | ���포트만 |
-| C19 | UID 0 백도어 | - | `/etc/passwd`에서 UID 0 계정 확인 | root 이외의 UID 0 계정 존재 | 리포���만 |
+| C18 | 의심 프로세스 | - | 삭제된 바이너리 실행, 의심 패턴, /tmp 경로 실행 탐색 | 의심 프로세스 발견 | 리포트만 |
+| C19 | UID 0 백도어 | - | `/etc/passwd`에서 UID 0 계정 확인 | root 이외의 UID 0 계정 존재 | 리포트만 |
 | C20 | login.defs | `login_defs_baseline.txt` | key=value 비교 | 설정값 변경됨 | `sed`로 복원 |
 | C21 | 터널 방어 | `tunnel_ufw_after_rules_baseline.txt`, `tunnel_resolv_baseline.txt` | iptables 규칙 존재 확인, resolv.conf chattr 확인, 프로세스 탐지, 바이너리 잔류 확인 | 터널 규칙 누락, resolv 잠금 해제, 터널 도구 발견 | `ufw reload`, `chattr +i`, 바이너리 삭제 |
 
@@ -1057,7 +1057,7 @@ sudo ./02_check_and_restore.sh --auto-restore
 | 스크립트 | 파일명 |
 |----------|--------|
 | 01 하드닝 | `<YYYYMMDD_HHMMSS>_<hostname>_baseline_hardening.log` |
-| 02 점검/복��� | `<YYYYMMDD_HHMMSS>_<hostname>_check_result.log` |
+| 02 점검/복원 | `<YYYYMMDD_HHMMSS>_<hostname>_check_result.log` |
 
 예: `20260407_143022_webserver01_baseline_hardening.log`
 
@@ -1147,7 +1147,7 @@ sudo ./02_check_and_restore.sh --auto-restore
 
 ---
 
-## 9. ���러블슈��
+## 9. 트러블슈팅
 
 ### 9.1 gt 계정 관련
 
@@ -1271,7 +1271,7 @@ CUSTOM_ALLOWED_PORTS="8080/tcp"
 
 **증상**: `[DRIFT] UFW is inactive!`
 
-**원인**: UFW가 비활성화됨 (수동 또는 재부�� 후)
+**원인**: UFW가 비활성화됨 (수동 또는 재부팅 후)
 
 **해결 방법**:
 ```bash
@@ -1321,7 +1321,7 @@ ACCOUNT_ALLOWLIST="wazuh ossec"
 
 ---
 
-**��상**: Ansible 실행 중 SSH 연결이 끊어짐
+**증상**: Ansible 실행 중 SSH 연결이 끊어짐
 
 **원인**: `KILL_OTHER_SESSIONS=true`(기본)으로 하드닝 후 Ansible의 SSH 연결이 종료됨
 
