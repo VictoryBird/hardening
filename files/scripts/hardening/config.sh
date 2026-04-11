@@ -71,6 +71,79 @@ KILL_OTHER_SESSIONS="${KILL_OTHER_SESSIONS:-true}"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 하드닝 항목 선택 (true=실행, false=건너뜀)
+# ═══════════════════════════════════════════════════════════════════════════
+# 개별 하드닝 항목을 선택적으로 활성화/비활성화합니다.
+# 특정 서버에서 문제가 발생하는 항목만 끄고 싶을 때 사용하세요.
+# Ansible에서 환경변수로 오버라이드 가능:
+#   ansible-playbook 4002_hardening_apply.yml -e "HARDEN_SSH=false"
+
+# 방화벽 설정 (UFW/firewalld/pf)
+HARDEN_FIREWALL="${HARDEN_FIREWALL:-true}"
+
+# SSH 하드닝 (sshd_config 변경)
+HARDEN_SSH="${HARDEN_SSH:-true}"
+
+# PAM 패스워드 정책 (passwdqc/pwquality)
+HARDEN_PAM="${HARDEN_PAM:-true}"
+
+# PAM 계정 잠금 정책 (faillock/tally2)
+HARDEN_FAILLOCK="${HARDEN_FAILLOCK:-true}"
+
+# sysctl 커널 보안 설정
+HARDEN_SYSCTL="${HARDEN_SYSCTL:-true}"
+
+# 시스템 계정 nologin 설정
+HARDEN_ACCOUNTS="${HARDEN_ACCOUNTS:-true}"
+
+# sudoers NOPASSWD 제거 (gt 제외)
+HARDEN_SUDOERS="${HARDEN_SUDOERS:-true}"
+
+# 불필요 서비스 비활성화
+HARDEN_SERVICES="${HARDEN_SERVICES:-true}"
+
+# 파일 권한 최소화
+HARDEN_FILE_PERMISSIONS="${HARDEN_FILE_PERMISSIONS:-true}"
+
+# SUID 비트 제거
+HARDEN_SUID="${HARDEN_SUID:-true}"
+
+# 비밀번호 없는 계정 잠금
+HARDEN_EMPTY_PASSWORDS="${HARDEN_EMPTY_PASSWORDS:-true}"
+
+# 커널 모듈 차단 (Linux only)
+HARDEN_KERNEL_MODULES="${HARDEN_KERNEL_MODULES:-true}"
+
+# /tmp, /dev/shm 마운트 하드닝
+HARDEN_MOUNT="${HARDEN_MOUNT:-true}"
+
+# /proc hidepid 설정
+HARDEN_HIDEPID="${HARDEN_HIDEPID:-true}"
+
+# core dump 제한
+HARDEN_CORE_DUMP="${HARDEN_CORE_DUMP:-true}"
+
+# umask 설정
+HARDEN_UMASK="${HARDEN_UMASK:-true}"
+
+# 경고 배너 설정
+HARDEN_BANNER="${HARDEN_BANNER:-true}"
+
+# 터널링 방어 (ICMP/DNS/SOCKS5 차단, 도구 제거)
+# 참고: 기존 TUNNEL_DEFENSE_ENABLED와 동일 기능. 둘 다 false면 비활성화.
+HARDEN_TUNNEL_DEFENSE="${HARDEN_TUNNEL_DEFENSE:-true}"
+
+# 패스워드 에이징 정책 (login.defs)
+HARDEN_LOGIN_DEFS="${HARDEN_LOGIN_DEFS:-true}"
+
+# cron 디렉토리 권한 제한
+HARDEN_CRON="${HARDEN_CRON:-true}"
+
+# other 권한 제거 (o-rwx)
+HARDEN_OTHER_PERMS="${HARDEN_OTHER_PERMS:-true}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # SSH 설정
 # ═══════════════════════════════════════════════════════════════════════════
 

@@ -915,23 +915,24 @@ setup_auditd() {
 run_hardening() {
     log_info "===== FreeBSD hardening adapter: run_hardening() ====="
 
-    setup_pam                          # [1]
-    setup_firewall                     # [2] pf + tunnel defense (with safety)
-    setup_cron_permissions             # [3]
-    setup_sysctl                       # [4] NO IPv6 disable
-    setup_sensitive_file_permissions   # [5]
-    setup_nologin_accounts             # [6] with account protection
-    setup_sudoers                      # [7] with gt NOPASSWD preservation
-    setup_suid_removal                 # [8]
-    setup_disable_services             # [9] with service protection
-    setup_lock_empty_password          # [10] with account protection
-    setup_ssh_hardening                # [11]
-    setup_login_conf                   # [12]
-    setup_tmp_mount_hardening          # [13]
-    setup_core_dump_limits             # [14]
-    setup_banner                       # [15]
-    setup_tunnel_hardening             # [16] process detection + tool removal only
-    setup_auditd                       # auditd install only (no config changes)
+    [[ "${HARDEN_PAM}" == "true" ]] && setup_pam || log_skip "[TOGGLE] PAM disabled"
+    [[ "${HARDEN_FIREWALL}" == "true" ]] && setup_firewall || log_skip "[TOGGLE] Firewall disabled"
+    [[ "${HARDEN_CRON}" == "true" ]] && setup_cron_permissions || log_skip "[TOGGLE] Cron permissions disabled"
+    [[ "${HARDEN_SYSCTL}" == "true" ]] && setup_sysctl || log_skip "[TOGGLE] Sysctl disabled"
+    [[ "${HARDEN_FILE_PERMISSIONS}" == "true" ]] && setup_sensitive_file_permissions || log_skip "[TOGGLE] File permissions disabled"
+    [[ "${HARDEN_ACCOUNTS}" == "true" ]] && setup_nologin_accounts || log_skip "[TOGGLE] Account nologin disabled"
+    [[ "${HARDEN_SUDOERS}" == "true" ]] && setup_sudoers || log_skip "[TOGGLE] Sudoers disabled"
+    [[ "${HARDEN_SUID}" == "true" ]] && setup_suid_removal || log_skip "[TOGGLE] SUID removal disabled"
+    [[ "${HARDEN_SERVICES}" == "true" ]] && setup_disable_services || log_skip "[TOGGLE] Service disable disabled"
+    [[ "${HARDEN_EMPTY_PASSWORDS}" == "true" ]] && setup_lock_empty_password || log_skip "[TOGGLE] Empty password lock disabled"
+    [[ "${HARDEN_SSH}" == "true" ]] && setup_ssh_hardening || log_skip "[TOGGLE] SSH disabled"
+    [[ "${HARDEN_LOGIN_DEFS}" == "true" ]] && setup_login_conf || log_skip "[TOGGLE] Login conf disabled"
+    [[ "${HARDEN_MOUNT}" == "true" ]] && setup_tmp_mount_hardening || log_skip "[TOGGLE] Mount hardening disabled"
+    [[ "${HARDEN_CORE_DUMP}" == "true" ]] && setup_core_dump_limits || log_skip "[TOGGLE] Core dump disabled"
+    [[ "${HARDEN_BANNER}" == "true" ]] && setup_banner || log_skip "[TOGGLE] Banner disabled"
+    [[ "${HARDEN_TUNNEL_DEFENSE}" == "true" ]] && setup_tunnel_hardening || log_skip "[TOGGLE] Tunnel defense disabled"
+    # auditd install is always run (not toggleable — orchestrator handles snapshot)
+    setup_auditd
 
     log_ok "===== FreeBSD hardening complete ====="
 }
@@ -1936,23 +1937,23 @@ check_tunnel_defense() {
 run_checks() {
     log_info "===== FreeBSD adapter: run_checks() (mode=${MODE}) ====="
 
-    check_sysctl               # [C1]
-    check_file_permissions     # [C2]
-    check_suid_files           # [C3]
-    check_disabled_services    # [C4] with service protection
-    check_login_accounts       # [C5] with account protection
-    check_pf                   # [C6] with outbound port protection
-    check_sudoers              # [C7] with gt NOPASSWD preservation
-    check_empty_passwords      # [C8] with account protection
-    check_suspicious_files     # [C9]
-    check_auditd               # [C10] diff-based against snapshot
-    check_cron_permissions     # [C11]
-    check_ssh_config           # [C12]
-    check_malicious_cron       # [C13]
-    check_network              # [C14]
-    check_suspicious_processes # [C15]
-    check_uid0_accounts        # [C16]
-    check_tunnel_defense       # [C17]
+    [[ "${HARDEN_SYSCTL}" == "true" ]] && check_sysctl || log_skip "[TOGGLE] Sysctl check skipped"
+    [[ "${HARDEN_FILE_PERMISSIONS}" == "true" ]] && check_file_permissions || log_skip "[TOGGLE] File permissions check skipped"
+    [[ "${HARDEN_SUID}" == "true" ]] && check_suid_files || log_skip "[TOGGLE] SUID check skipped"
+    [[ "${HARDEN_SERVICES}" == "true" ]] && check_disabled_services || log_skip "[TOGGLE] Service check skipped"
+    [[ "${HARDEN_ACCOUNTS}" == "true" ]] && check_login_accounts || log_skip "[TOGGLE] Account check skipped"
+    [[ "${HARDEN_FIREWALL}" == "true" ]] && check_pf || log_skip "[TOGGLE] Firewall check skipped"
+    [[ "${HARDEN_SUDOERS}" == "true" ]] && check_sudoers || log_skip "[TOGGLE] Sudoers check skipped"
+    [[ "${HARDEN_EMPTY_PASSWORDS}" == "true" ]] && check_empty_passwords || log_skip "[TOGGLE] Empty passwords check skipped"
+    check_suspicious_files     # [C9] always run
+    check_auditd               # [C10] always run
+    [[ "${HARDEN_CRON}" == "true" ]] && check_cron_permissions || log_skip "[TOGGLE] Cron check skipped"
+    [[ "${HARDEN_SSH}" == "true" ]] && check_ssh_config || log_skip "[TOGGLE] SSH check skipped"
+    check_malicious_cron       # [C13] always run (security)
+    check_network              # [C14] always run (security)
+    check_suspicious_processes # [C15] always run (security)
+    check_uid0_accounts        # [C16] always run (security)
+    [[ "${HARDEN_TUNNEL_DEFENSE}" == "true" ]] && check_tunnel_defense || log_skip "[TOGGLE] Tunnel defense check skipped"
 
     log_ok "===== FreeBSD drift checks complete ====="
 }

@@ -1100,9 +1100,14 @@ setup_pam_faillock() {
                 log_ok "authselect: sssd profile with-faillock selected" || \
                 log_warn "authselect select failed — faillock may need manual PAM config"
         fi
+    elif command -v authconfig &>/dev/null; then
+        # RHEL 7 / CentOS 7 fallback: use authconfig to enable faillock
+        authconfig --enablefaillock --update 2>/dev/null && \
+            log_ok "authconfig: faillock enabled" || \
+            log_warn "authconfig --enablefaillock failed — falling back to manual PAM editing"
     else
-        # Fallback: manually configure PAM if authselect is not available (RHEL 7)
-        log_info "authselect not available — checking PAM files directly"
+        # Fallback: manually configure PAM if neither authselect nor authconfig available
+        log_info "Neither authselect nor authconfig available — checking PAM files directly"
         local pam_auth="/etc/pam.d/system-auth"
         local pam_password="/etc/pam.d/password-auth"
 
@@ -1346,28 +1351,29 @@ setup_auditd() {
 run_hardening() {
     log_info "===== RHEL/Rocky/AlmaLinux hardening adapter: run_hardening() ====="
 
-    setup_pam                          # [1] pwquality + authselect
-    setup_firewall                     # [2] firewalld + tunnel defense (with safety)
-    setup_cron_permissions             # [3]
-    setup_modprobe                     # [4]
-    setup_sysctl                       # [5] NO IPv6 disable
-    setup_proc_hidepid                 # [6]
-    setup_sensitive_file_permissions   # [7]
-    setup_other_permission_removal     # [8]
-    setup_nologin_accounts             # [9] with account protection
-    setup_sudoers                      # [10] with gt NOPASSWD preservation
-    setup_suid_removal                 # [11]
-    setup_disable_services             # [12] with service protection
-    setup_lock_empty_password          # [13] with account protection
-    setup_ssh_hardening                # [14]
-    setup_login_defs                   # [15]
-    setup_pam_faillock                 # [16] authselect with-faillock
-    setup_tmp_mount_hardening          # [17]
-    setup_core_dump_limits             # [18]
-    setup_umask                        # [19]
-    setup_banner                       # [20]
-    setup_tunnel_hardening             # [21] process detection + tool removal only
-    setup_auditd                       # auditd install only (no config changes)
+    [[ "${HARDEN_PAM}" == "true" ]] && setup_pam || log_skip "[TOGGLE] PAM disabled"
+    [[ "${HARDEN_FIREWALL}" == "true" ]] && setup_firewall || log_skip "[TOGGLE] Firewall disabled"
+    [[ "${HARDEN_CRON}" == "true" ]] && setup_cron_permissions || log_skip "[TOGGLE] Cron permissions disabled"
+    [[ "${HARDEN_KERNEL_MODULES}" == "true" ]] && setup_modprobe || log_skip "[TOGGLE] Kernel modules disabled"
+    [[ "${HARDEN_SYSCTL}" == "true" ]] && setup_sysctl || log_skip "[TOGGLE] Sysctl disabled"
+    [[ "${HARDEN_HIDEPID}" == "true" ]] && setup_proc_hidepid || log_skip "[TOGGLE] Hidepid disabled"
+    [[ "${HARDEN_FILE_PERMISSIONS}" == "true" ]] && setup_sensitive_file_permissions || log_skip "[TOGGLE] File permissions disabled"
+    [[ "${HARDEN_OTHER_PERMS}" == "true" ]] && setup_other_permission_removal || log_skip "[TOGGLE] Other permissions disabled"
+    [[ "${HARDEN_ACCOUNTS}" == "true" ]] && setup_nologin_accounts || log_skip "[TOGGLE] Account nologin disabled"
+    [[ "${HARDEN_SUDOERS}" == "true" ]] && setup_sudoers || log_skip "[TOGGLE] Sudoers disabled"
+    [[ "${HARDEN_SUID}" == "true" ]] && setup_suid_removal || log_skip "[TOGGLE] SUID removal disabled"
+    [[ "${HARDEN_SERVICES}" == "true" ]] && setup_disable_services || log_skip "[TOGGLE] Service disable disabled"
+    [[ "${HARDEN_EMPTY_PASSWORDS}" == "true" ]] && setup_lock_empty_password || log_skip "[TOGGLE] Empty password lock disabled"
+    [[ "${HARDEN_SSH}" == "true" ]] && setup_ssh_hardening || log_skip "[TOGGLE] SSH disabled"
+    [[ "${HARDEN_LOGIN_DEFS}" == "true" ]] && setup_login_defs || log_skip "[TOGGLE] Login defs disabled"
+    [[ "${HARDEN_FAILLOCK}" == "true" ]] && setup_pam_faillock || log_skip "[TOGGLE] Faillock disabled"
+    [[ "${HARDEN_MOUNT}" == "true" ]] && setup_tmp_mount_hardening || log_skip "[TOGGLE] Mount hardening disabled"
+    [[ "${HARDEN_CORE_DUMP}" == "true" ]] && setup_core_dump_limits || log_skip "[TOGGLE] Core dump disabled"
+    [[ "${HARDEN_UMASK}" == "true" ]] && setup_umask || log_skip "[TOGGLE] Umask disabled"
+    [[ "${HARDEN_BANNER}" == "true" ]] && setup_banner || log_skip "[TOGGLE] Banner disabled"
+    [[ "${HARDEN_TUNNEL_DEFENSE}" == "true" ]] && setup_tunnel_hardening || log_skip "[TOGGLE] Tunnel defense disabled"
+    # auditd install is always run (not toggleable — orchestrator handles snapshot)
+    setup_auditd
 
     log_ok "===== RHEL/Rocky/AlmaLinux hardening complete ====="
 }
@@ -2945,28 +2951,28 @@ check_selinux() {
 run_checks() {
     log_info "===== RHEL/Rocky/AlmaLinux adapter: run_checks() (mode=${MODE}) ====="
 
-    check_sysctl               # [C1]
-    check_file_permissions     # [C2]
-    check_suid_files           # [C3]
-    check_disabled_services    # [C4] with service protection
-    check_login_accounts       # [C5] with account protection
-    check_firewall             # [C6] with outbound port protection
-    check_sudoers              # [C7] with gt NOPASSWD preservation
-    check_empty_passwords      # [C8] with account protection
-    check_suspicious_files     # [C9]
-    check_auditd               # [C10] diff-based against snapshot
-    check_pam_policy           # [C11]
-    check_cron_permissions     # [C12]
-    check_modprobe_blacklist   # [C13]
-    check_proc_hidepid         # [C14]
-    check_ssh_config           # [C15]
-    check_malicious_cron       # [C16]
-    check_network              # [C17]
-    check_suspicious_processes # [C18]
-    check_uid0_accounts        # [C19]
-    check_login_defs           # [C20]
-    check_tunnel_defense       # [C21] firewalld direct rules integrated
-    check_selinux              # [C22] SELinux status
+    [[ "${HARDEN_SYSCTL}" == "true" ]] && check_sysctl || log_skip "[TOGGLE] Sysctl check skipped"
+    [[ "${HARDEN_FILE_PERMISSIONS}" == "true" ]] && check_file_permissions || log_skip "[TOGGLE] File permissions check skipped"
+    [[ "${HARDEN_SUID}" == "true" ]] && check_suid_files || log_skip "[TOGGLE] SUID check skipped"
+    [[ "${HARDEN_SERVICES}" == "true" ]] && check_disabled_services || log_skip "[TOGGLE] Service check skipped"
+    [[ "${HARDEN_ACCOUNTS}" == "true" ]] && check_login_accounts || log_skip "[TOGGLE] Account check skipped"
+    [[ "${HARDEN_FIREWALL}" == "true" ]] && check_firewall || log_skip "[TOGGLE] Firewall check skipped"
+    [[ "${HARDEN_SUDOERS}" == "true" ]] && check_sudoers || log_skip "[TOGGLE] Sudoers check skipped"
+    [[ "${HARDEN_EMPTY_PASSWORDS}" == "true" ]] && check_empty_passwords || log_skip "[TOGGLE] Empty passwords check skipped"
+    check_suspicious_files     # [C9] always run
+    check_auditd               # [C10] always run
+    [[ "${HARDEN_PAM}" == "true" ]] && check_pam_policy || log_skip "[TOGGLE] PAM check skipped"
+    [[ "${HARDEN_CRON}" == "true" ]] && check_cron_permissions || log_skip "[TOGGLE] Cron check skipped"
+    [[ "${HARDEN_KERNEL_MODULES}" == "true" ]] && check_modprobe_blacklist || log_skip "[TOGGLE] Kernel modules check skipped"
+    [[ "${HARDEN_HIDEPID}" == "true" ]] && check_proc_hidepid || log_skip "[TOGGLE] Hidepid check skipped"
+    [[ "${HARDEN_SSH}" == "true" ]] && check_ssh_config || log_skip "[TOGGLE] SSH check skipped"
+    check_malicious_cron       # [C16] always run (security)
+    check_network              # [C17] always run (security)
+    check_suspicious_processes # [C18] always run (security)
+    check_uid0_accounts        # [C19] always run (security)
+    [[ "${HARDEN_LOGIN_DEFS}" == "true" ]] && check_login_defs || log_skip "[TOGGLE] Login defs check skipped"
+    [[ "${HARDEN_TUNNEL_DEFENSE}" == "true" ]] && check_tunnel_defense || log_skip "[TOGGLE] Tunnel defense check skipped"
+    check_selinux              # [C22] always run (SELinux status)
 
     log_ok "===== RHEL/Rocky/AlmaLinux drift checks complete ====="
 }

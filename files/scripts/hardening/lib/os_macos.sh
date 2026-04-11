@@ -712,14 +712,14 @@ setup_sensitive_file_permissions() {
 run_hardening() {
     log_info "===== macOS hardening adapter: run_hardening() ====="
 
-    setup_firewall                     # [1] pf + Application Firewall
-    setup_macos_system                 # [2] macOS-specific system settings
-    setup_ssh_hardening                # [3] SSH config
-    setup_nologin_accounts             # [4] verify system accounts
-    setup_sudoers                      # [5] gt NOPASSWD preservation
-    setup_banner                       # [6] /etc/motd + login window
-    setup_sysctl                       # [7] limited sysctl
-    setup_sensitive_file_permissions   # [8] file permissions
+    [[ "${HARDEN_FIREWALL}" == "true" ]] && setup_firewall || log_skip "[TOGGLE] Firewall disabled"
+    [[ "${HARDEN_SYSCTL}" == "true" ]] && setup_macos_system || log_skip "[TOGGLE] macOS system settings disabled"
+    [[ "${HARDEN_SSH}" == "true" ]] && setup_ssh_hardening || log_skip "[TOGGLE] SSH disabled"
+    [[ "${HARDEN_ACCOUNTS}" == "true" ]] && setup_nologin_accounts || log_skip "[TOGGLE] Account nologin disabled"
+    [[ "${HARDEN_SUDOERS}" == "true" ]] && setup_sudoers || log_skip "[TOGGLE] Sudoers disabled"
+    [[ "${HARDEN_BANNER}" == "true" ]] && setup_banner || log_skip "[TOGGLE] Banner disabled"
+    [[ "${HARDEN_SYSCTL}" == "true" ]] && setup_sysctl || log_skip "[TOGGLE] Sysctl disabled"
+    [[ "${HARDEN_FILE_PERMISSIONS}" == "true" ]] && setup_sensitive_file_permissions || log_skip "[TOGGLE] File permissions disabled"
 
     log_ok "===== macOS hardening complete ====="
 }
@@ -1420,17 +1420,17 @@ check_auditd() {
 run_checks() {
     log_info "===== macOS adapter: run_checks() (mode=${MODE}) ====="
 
-    check_firewall              # [C1]
-    check_macos_system          # [C2]
-    check_ssh_config            # [C3]
-    check_login_accounts        # [C4]
-    check_sudoers               # [C5]
-    check_suspicious_files      # [C6]
-    check_suspicious_processes  # [C7]
-    check_network               # [C8]
-    check_file_permissions      # [C9]
-    check_sysctl                # [C10]
-    check_auditd                # [C11]
+    [[ "${HARDEN_FIREWALL}" == "true" ]] && check_firewall || log_skip "[TOGGLE] Firewall check skipped"
+    [[ "${HARDEN_SYSCTL}" == "true" ]] && check_macos_system || log_skip "[TOGGLE] macOS system check skipped"
+    [[ "${HARDEN_SSH}" == "true" ]] && check_ssh_config || log_skip "[TOGGLE] SSH check skipped"
+    [[ "${HARDEN_ACCOUNTS}" == "true" ]] && check_login_accounts || log_skip "[TOGGLE] Account check skipped"
+    [[ "${HARDEN_SUDOERS}" == "true" ]] && check_sudoers || log_skip "[TOGGLE] Sudoers check skipped"
+    check_suspicious_files      # [C6] always run (security)
+    check_suspicious_processes  # [C7] always run (security)
+    check_network               # [C8] always run (security)
+    [[ "${HARDEN_FILE_PERMISSIONS}" == "true" ]] && check_file_permissions || log_skip "[TOGGLE] File permissions check skipped"
+    [[ "${HARDEN_SYSCTL}" == "true" ]] && check_sysctl || log_skip "[TOGGLE] Sysctl check skipped"
+    check_auditd                # [C11] always run
 
     log_ok "===== macOS drift checks complete ====="
 }
