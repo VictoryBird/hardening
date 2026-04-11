@@ -1,0 +1,21 @@
+---
+# ═══════════════════════════════════════════════════════════════
+# 하드닝 플레이북 (Playbook A)
+# ═══════════════════════════════════════════════════════════════
+# 사용법:
+#   ansible-playbook playbook_harden.yml -i <inventory>
+#   ansible-playbook playbook_harden.yml -i <inventory> --limit webserver01
+#   ansible-playbook playbook_harden.yml -i <inventory> -e "ssh_password_auth=yes"
+#
+# 사전 조건:
+#   - 보안 에이전트(Wazuh, CrowdStrike, Velociraptor) 설치 완료
+#   - 대상 서버에 sudo 권한이 있는 계정으로 SSH 접속 가능
+# ═══════════════════════════════════════════════════════════════
+- name: System Hardening
+  hosts: all
+  become: yes
+  any_errors_fatal: false
+  vars:
+    hardening_action: harden
+  roles:
+    - hardening

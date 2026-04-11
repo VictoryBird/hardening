@@ -1,0 +1,35 @@
+---
+# ═══════════════════════════════════════════════════════════════
+# 호스트별 하드닝 설정 오버라이드
+# ═══════════════════════════════════════════════════════════════
+# 이 파일을 복사해서 <호스트명>.yml로 저장하세요.
+# 필요한 항목만 주석 해제. 나머지는 자동 감지값 또는 config.sh 기본값 사용.
+#
+# 예: cp _template.yml webserver01.yml
+#
+# 우선순위: host_vars > 자동 감지 > config.sh 기본값
+
+# --- 추가 허용 포트 (자동 감지 외 수동 추가) ---
+# extra_allowed_ports: "3306/tcp 8443/tcp"
+
+# --- 방화벽 프로파일 강제 지정 (자동 감지 무시) ---
+# hardening_profile: "web"
+
+# --- SSH ---
+# ssh_password_auth: "yes"
+# ssh_permit_root_login: "no"
+
+# --- IP 포워딩 (라우터/게이트웨이는 false) ---
+# sysctl_disable_ip_forward: "false"
+
+# --- 추가 보호 서비스 (자동 감지 외 수동 추가) ---
+# extra_service_allowlist: "docker containerd"
+
+# --- 추가 보호 계정 (자동 감지 외 수동 추가) ---
+# extra_account_allowlist: "deploy monitoring"
+
+# --- 비활성화 서비스 오버라이드 (config.sh 기본값 대체) ---
+# disable_services: "avahi-daemon cups"
+
+# --- 터널링 방어 비활성화 (특수 환경) ---
+# tunnel_defense_enabled: "false"

@@ -1,0 +1,178 @@
+---
+# ═══════════════════════════════════════════════════════════════
+# 서버 자동 탐색
+# ═══════════════════════════════════════════════════════════════
+
+# --- 1. Ansible 접속 계정 감지 ---
+- name: "Detect Ansible connection user"
+  set_fact:
+    detected_ansible_account: "{{ ansible_user | default(ansible_env.USER) | default('root') }}"
+
+- name: "Log detected Ansible account"
+  debug:
+    msg: "Ansible account: {{ detected_ansible_account }}"
+
+# --- 2. 리스닝 포트 수집 ---
+- name: "Gather listening ports (Linux)"
+  shell: ss -tlnp 2>/dev/null | awk 'NR>1 {print $4}' | grep -oE '[0-9]+$' | sort -un
+  register: listening_ports_raw
+  changed_when: false
+  failed_when: false
+  when: ansible_system == "Linux"
+
+- name: "Gather listening ports (FreeBSD)"
+  shell: sockstat -l -4 -6 2>/dev/null | awk 'NR>1 {print $6}' | grep -oE '[0-9]+$' | sort -un
+  register: listening_ports_raw
+  changed_when: false
+  failed_when: false
+  when: ansible_system == "FreeBSD"
+
+- name: "Gather listening ports (macOS)"
+  shell: lsof -iTCP -sTCP:LISTEN -nP 2>/dev/null | awk 'NR>1 {print $9}' | grep -oE '[0-9]+$' | sort -un
+  register: listening_ports_raw
+  changed_when: false
+  failed_when: false
+  when: ansible_system == "Darwin"
+
+- name: "Set listening ports fact"
+  set_fact:
+    discovered_ports: "{{ listening_ports_raw.stdout_lines | default([]) }}"
+
+# --- 3. 프로파일 자동 결정 ---
+- name: "Auto-detect hardening profile"
+  set_fact:
+    auto_detected_profile: >-
+      {%- set ports = discovered_ports | map('int') | list -%}
+      {%- set is_web = (80 in ports or 443 in ports) -%}
+      {%- set is_dns = (53 in ports) -%}
+      {%- set is_ad = (88 in ports or 389 in ports or 636 in ports) -%}
+      {%- set is_log = (514 in ports or 1514 in ports or 1515 in ports or 1516 in ports) -%}
+      {%- set categories = [] -%}
+      {%- if is_web %}{% set _ = categories.append('web') %}{% endif -%}
+      {%- if is_dns %}{% set _ = categories.append('dns') %}{% endif -%}
+      {%- if is_ad %}{% set _ = categories.append('ad') %}{% endif -%}
+      {%- if is_log %}{% set _ = categories.append('log') %}{% endif -%}
+      {%- if categories | length > 1 -%}full
+      {%- elif categories | length == 1 -%}{{ categories[0] }}
+      {%- else -%}base{%- endif -%}
+
+- name: "Determine final profile"
+  set_fact:
+    final_profile: "{{ hardening_profile | default(auto_detected_profile) | trim }}"
+
+- name: "Log detected profile"
+  debug:
+    msg: "Profile: {{ final_profile }} (auto-detected: {{ auto_detected_profile | trim }}, override: {{ hardening_profile | default('none') }})"
+
+# --- 4. 보안 에이전트 감지 ---
+- name: "Detect running security agents"
+  shell: |
+    agent_ports=""
+    agent_services=""
+    agent_accounts=""
+    {% for agent_name, agent in known_agents.items() %}
+    {% for proc in agent.processes.split() %}
+    if pgrep -x "{{ proc }}" >/dev/null 2>&1; then
+      {% if agent.ports %}
+      agent_ports="{{ agent.ports }} ${agent_ports}"
+      {% endif %}
+      {% if agent.services %}
+      agent_services="{{ agent.services }} ${agent_services}"
+      {% endif %}
+      {% if agent.accounts %}
+      agent_accounts="{{ agent.accounts }} ${agent_accounts}"
+      {% endif %}
+    fi
+    {% endfor %}
+    {% endfor %}
+    echo "PORTS:${agent_ports}"
+    echo "SERVICES:${agent_services}"
+    echo "ACCOUNTS:${agent_accounts}"
+  register: agent_detection
+  changed_when: false
+  failed_when: false
+
+- name: "Parse agent detection results"
+  set_fact:
+    detected_agent_ports: "{{ agent_detection.stdout_lines | select('match', '^PORTS:') | map('regex_replace', '^PORTS:', '') | first | default('') | trim }}"
+    detected_agent_services: "{{ agent_detection.stdout_lines | select('match', '^SERVICES:') | map('regex_replace', '^SERVICES:', '') | first | default('') | trim }}"
+    detected_agent_accounts: "{{ agent_detection.stdout_lines | select('match', '^ACCOUNTS:') | map('regex_replace', '^ACCOUNTS:', '') | first | default('') | trim }}"
+
+- name: "Log detected agents"
+  debug:
+    msg: "Agents — ports: [{{ detected_agent_ports }}], services: [{{ detected_agent_services }}], accounts: [{{ detected_agent_accounts }}]"
+
+# --- 5. IP 포워딩 감지 ---
+- name: "Check IP forwarding (Linux)"
+  command: sysctl -n net.ipv4.ip_forward
+  register: ip_forward_check
+  changed_when: false
+  failed_when: false
+  when: ansible_system == "Linux"
+
+- name: "Check IP forwarding (FreeBSD)"
+  command: sysctl -n net.inet.ip.forwarding
+  register: ip_forward_check
+  changed_when: false
+  failed_when: false
+  when: ansible_system == "FreeBSD"
+
+- name: "Check IP forwarding (macOS)"
+  command: sysctl -n net.inet.ip.forwarding
+  register: ip_forward_check
+  changed_when: false
+  failed_when: false
+  when: ansible_system == "Darwin"
+
+- name: "Determine IP forwarding setting"
+  set_fact:
+    final_ip_forward: "{{ sysctl_disable_ip_forward | default('false' if (ip_forward_check.stdout | default('0') | trim) == '1' else 'true') }}"
+
+# --- 6. SSH 키 확인 ---
+- name: "Check SSH authorized_keys for Ansible user"
+  stat:
+    path: "{{ ansible_env.HOME }}/.ssh/authorized_keys"
+  register: ansible_user_ssh_key
+
+- name: "Determine SSH password auth"
+  set_fact:
+    final_ssh_pw_auth: >-
+      {%- if ssh_password_auth is defined -%}{{ ssh_password_auth }}
+      {%- elif not (ansible_user_ssh_key.stat.exists | default(false)) or (ansible_user_ssh_key.stat.size | default(0)) == 0 -%}yes
+      {%- else -%}no{%- endif -%}
+
+- name: "Log SSH auth decision"
+  debug:
+    msg: "SSH PasswordAuth: {{ final_ssh_pw_auth | trim }} (key exists: {{ ansible_user_ssh_key.stat.exists | default(false) }})"
+
+# --- 7. 최종 environment 조합 ---
+- name: "Build custom allowed ports"
+  set_fact:
+    final_custom_ports: "{{ ((extra_allowed_ports | default('')) + ' ' + detected_agent_ports) | trim }}"
+
+- name: "Build service allowlist"
+  set_fact:
+    final_service_allowlist: "{{ ((extra_service_allowlist | default('')) + ' ' + detected_agent_services) | trim }}"
+
+- name: "Build account allowlist"
+  set_fact:
+    final_account_allowlist: "{{ ((extra_account_allowlist | default('')) + ' ' + detected_agent_accounts) | trim }}"
+
+- name: "Assemble hardening environment"
+  set_fact:
+    hardening_environment:
+      HARDENING_PROFILE: "{{ final_profile | trim }}"
+      CUSTOM_ALLOWED_PORTS: "{{ final_custom_ports }}"
+      SSH_PASSWORD_AUTH: "{{ final_ssh_pw_auth | trim }}"
+      SYSCTL_DISABLE_IP_FORWARD: "{{ final_ip_forward | trim }}"
+      SERVICE_ALLOWLIST: "{{ final_service_allowlist }}"
+      ACCOUNT_ALLOWLIST: "{{ final_account_allowlist }}"
+      ANSIBLE_ACCOUNT: "{{ detected_ansible_account }}"
+      KILL_OTHER_SESSIONS: "false"
+      SSH_PERMIT_ROOT_LOGIN: "{{ ssh_permit_root_login | default('') }}"
+      DISABLE_SERVICES: "{{ disable_services | default('') }}"
+      TUNNEL_DEFENSE_ENABLED: "{{ tunnel_defense_enabled | default('') }}"
+
+- name: "Log final environment"
+  debug:
+    msg: "{{ hardening_environment }}"

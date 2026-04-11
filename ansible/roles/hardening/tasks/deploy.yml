@@ -1,0 +1,40 @@
+---
+# ═══════════════════════════════════════════════════════════════
+# 하드닝 스크립트 배포
+# ═══════════════════════════════════════════════════════════════
+# NOTE: roles/hardening/files/hardening/ 디렉토리에 스크립트가 있어야 합니다.
+# 배포 전에 다음 명령으로 복사하세요:
+#   cp -r ../../{config.sh,01_baseline_hardening.sh,02_check_and_restore.sh,lib} roles/hardening/files/hardening/
+
+- name: "Create hardening directory"
+  file:
+    path: "{{ hardening_deploy_path }}"
+    state: directory
+    mode: '0750'
+    owner: root
+    group: root
+  when: ansible_system != "Darwin"
+
+- name: "Create hardening directory (macOS)"
+  file:
+    path: "{{ hardening_deploy_path }}"
+    state: directory
+    mode: '0750'
+    owner: root
+    group: wheel
+  when: ansible_system == "Darwin"
+
+- name: "Deploy hardening scripts"
+  copy:
+    src: hardening/
+    dest: "{{ hardening_deploy_path }}/"
+    mode: preserve
+    owner: root
+
+- name: "Ensure main scripts are executable"
+  file:
+    path: "{{ hardening_deploy_path }}/{{ item }}"
+    mode: '0750'
+  loop:
+    - 01_baseline_hardening.sh
+    - 02_check_and_restore.sh
