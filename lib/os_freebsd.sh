@@ -1994,6 +1994,17 @@ kill_other_ssh_sessions() {
 
         local user
         user=$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' ')
+
+        # Protect gt account and automation account
+        if [[ "$user" == "${PROTECTED_ACCOUNT_GT:-gt}" ]]; then
+            log_skip "  Skipping gt session: PID ${pid}"
+            continue
+        fi
+        if [[ -n "${ANSIBLE_ACCOUNT:-}" ]] && [[ "$user" == "${ANSIBLE_ACCOUNT}" ]]; then
+            log_skip "  Skipping automation account session: PID ${pid} (${user})"
+            continue
+        fi
+
         if kill -HUP "$pid" 2>/dev/null; then
             log_ok "  SSH session killed: PID ${pid} (user: ${user:-unknown})"
             killed_count=$((killed_count + 1))

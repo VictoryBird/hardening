@@ -1470,6 +1470,19 @@ kill_other_ssh_sessions() {
         ppid_of="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')" || true
         [[ "$ppid_of" == "1" || "$ppid_of" == "0" ]] && continue
 
+        local user
+        user=$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' ')
+
+        # Protect gt account and automation account
+        if [[ "$user" == "${PROTECTED_ACCOUNT_GT:-gt}" ]]; then
+            log_skip "  Skipping gt session: PID ${pid}"
+            continue
+        fi
+        if [[ -n "${ANSIBLE_ACCOUNT:-}" ]] && [[ "$user" == "${ANSIBLE_ACCOUNT}" ]]; then
+            log_skip "  Skipping automation account session: PID ${pid} (${user})"
+            continue
+        fi
+
         kill "$pid" 2>/dev/null && {
             log_info "  Killed sshd session PID=$pid"
             killed_count=$((killed_count + 1))

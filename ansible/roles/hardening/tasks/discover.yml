@@ -168,7 +168,7 @@
       SERVICE_ALLOWLIST: "{{ final_service_allowlist }}"
       ACCOUNT_ALLOWLIST: "{{ final_account_allowlist }}"
       ANSIBLE_ACCOUNT: "{{ detected_ansible_account }}"
-      KILL_OTHER_SESSIONS: "false"
+      KILL_OTHER_SESSIONS: "true"
       SSH_PERMIT_ROOT_LOGIN: "{{ ssh_permit_root_login | default('') }}"
       DISABLE_SERVICES: "{{ disable_services | default('') }}"
       TUNNEL_DEFENSE_ENABLED: "{{ tunnel_defense_enabled | default('') }}"
