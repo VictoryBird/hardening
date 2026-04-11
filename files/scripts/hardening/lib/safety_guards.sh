@@ -21,7 +21,6 @@ _SAFETY_GUARDS_SH_LOADED=1
 # Constants
 ###############################################################################
 readonly PROTECTED_ACCOUNT_GT="gt"
-readonly PROTECTED_ACCOUNT_USR="usr"
 
 # Ports that must remain open outbound (TCP)
 readonly GUARD_REQUIRED_TCP_PORTS="22 80 443 8080 110 995 143 993 21"
@@ -39,7 +38,7 @@ is_protected_account() {
 
     # Hardcoded protected accounts (green team)
     case "$account" in
-        "$PROTECTED_ACCOUNT_GT"|"$PROTECTED_ACCOUNT_USR")
+        "$PROTECTED_ACCOUNT_GT")
             log_warn "[GUARD] ${account} — protected account, skipping"
             return 0
             ;;
@@ -173,72 +172,6 @@ guard_account_gt() {
         log_ok "Sudoers drop-in '${sudoers_file}' is correct"
     fi
 
-    return 0
-}
-
-# guard_account_usr
-#   Verify usr account exists, log that it must not be deleted.
-guard_account_usr() {
-    log_info "Guard: verifying protected account '${PROTECTED_ACCOUNT_USR}'"
-
-    if ! id "$PROTECTED_ACCOUNT_USR" >/dev/null 2>&1; then
-        log_fail "Protected account '${PROTECTED_ACCOUNT_USR}' does not exist — it must not be deleted"
-        return 1
-    fi
-
-    log_ok "Account '${PROTECTED_ACCOUNT_USR}' exists — this account must not be deleted"
-    return 0
-}
-
-# change_usr_password <new_password>
-#   The ONLY allowed way to change usr's password.
-#   Prints the new password in a visible box to stdout.
-change_usr_password() {
-    local new_password="${1:-}"
-
-    if [[ -z "$new_password" ]]; then
-        log_error "change_usr_password: password argument is empty"
-        return 1
-    fi
-
-    if ! id "$PROTECTED_ACCOUNT_USR" >/dev/null 2>&1; then
-        log_error "change_usr_password: account '${PROTECTED_ACCOUNT_USR}' does not exist"
-        return 1
-    fi
-
-    local rc=0
-    case "${OS_FAMILY}" in
-        debian|rhel)
-            printf '%s:%s\n' "$PROTECTED_ACCOUNT_USR" "$new_password" | chpasswd || rc=$?
-            ;;
-        freebsd)
-            echo "$new_password" | pw mod user "$PROTECTED_ACCOUNT_USR" -h 0 || rc=$?
-            ;;
-        macos)
-            dscl . -passwd "/Users/${PROTECTED_ACCOUNT_USR}" "$new_password" || rc=$?
-            ;;
-        *)
-            log_error "change_usr_password: unsupported OS_FAMILY '${OS_FAMILY}'"
-            return 1
-            ;;
-    esac
-
-    if [[ "$rc" -ne 0 ]]; then
-        log_fail "Failed to change password for '${PROTECTED_ACCOUNT_USR}'"
-        return 1
-    fi
-
-    # Print password in a visible box
-    echo ""
-    echo "##############################################################"
-    echo "#                                                            #"
-    echo "#  PASSWORD CHANGED for account: ${PROTECTED_ACCOUNT_USR}"
-    echo "#  New password: ${new_password}"
-    echo "#                                                            #"
-    echo "##############################################################"
-    echo ""
-
-    log_ok "Password for '${PROTECTED_ACCOUNT_USR}' changed successfully"
     return 0
 }
 
@@ -767,7 +700,6 @@ run_all_guards() {
     local failures=0
 
     guard_account_gt    || failures=$((failures + 1))
-    guard_account_usr   || failures=$((failures + 1))
     guard_network_outbound || true   # non-fatal: log only
     guard_dns_unchanged || true       # auto-restores
     guard_ipv6_preserved || true      # auto-restores

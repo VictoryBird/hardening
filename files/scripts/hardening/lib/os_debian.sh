@@ -7,7 +7,7 @@
 # Requires: lib/common.sh (log_*, OS_FAMILY, HOSTNAME_ORIG, BACKUP_DIR,
 #           BASELINE_SNAPSHOT_DIR, backup_file, create_backup_dir)
 #           lib/safety_guards.sh (is_protected_account, is_protected_service,
-#           guard_account_gt, guard_network_outbound, change_usr_password,
+#           guard_account_gt, guard_network_outbound,
 #           is_gtmon_required_port)
 #
 # Exports: run_hardening(), run_checks(), create_baseline_snapshot(),
