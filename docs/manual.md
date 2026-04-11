@@ -53,33 +53,26 @@ config.sh (설정값)
 ### 1.2 파일 구조
 
 ```
-hardening/
-├── config.sh                          # 모든 하드닝 설정 (유일하게 수정할 파일)
-├── 01_baseline_hardening.sh           # 초기 하드닝 오케스트레이터
-├── 02_check_and_restore.sh            # 점검/복원 오케스트레이터
-├── lib/
-│   ├── common.sh                      # 공통 라이브러리 (OS 감지, 로깅, 백업)
-│   ├── safety_guards.sh               # 보호 계정/네트워크/에이전트 가드
-│   ├── os_debian.sh                   # Debian/Ubuntu 어댑터
-│   ├── os_rhel.sh                     # RHEL/CentOS/Rocky 어댑터
-│   ├── os_freebsd.sh                  # FreeBSD 어댑터
-│   └── os_macos.sh                    # macOS 어댑터
-├── ansible/
-│   ├── playbook_harden.yml            # 하드닝 실행 플레이북
-│   ├── playbook_check.yml             # 점검/복원 플레이북
-│   ├── README.md                      # Ansible 사용 가이드
-│   ├── host_vars/
-│   │   └── _template.yml              # 호스트별 설정 오버라이드 템플릿
-│   ├── roles/hardening/
-│       └── tasks/
-│       │   ├── main.yml               # 역할 진입점
-│       │   ├── discover.yml           # 서버 자동 탐색 (포트, 에이전트, SSH 키)
-│       │   ├── deploy.yml             # 스크립트 배포
-│       │   └── execute.yml            # 하드닝 실행
-│       ├── defaults/main.yml          # 기본 변수 (에이전트 정의 포함)
-│       └── files/                     # 하드닝 스크립트 배치 위치
-└── docs/
-    └── manual.md                      # 이 문서
+├── playbooks/                             # Ansible 플레이북 (자동화팀 playbooks/에 복사)
+│   ├── 4001_hardening_discover.yml        #   FAM: 서버 상태 수집
+│   ├── 4002_hardening_apply.yml           #   본훈련: 하드닝 적용
+│   └── 4003_hardening_check.yml           #   본훈련: 점검/복원
+├── files/scripts/hardening/               # 하드닝 스크립트 (자동화팀 files/scripts/에 복사)
+│   ├── config.sh                          #   설정 파일 (유일하게 수정할 파일)
+│   ├── 01_baseline_hardening.sh           #   하드닝 실행 스크립트
+│   ├── 02_check_and_restore.sh            #   점검/복원 스크립트
+│   └── lib/                               #   내부 라이브러리 (수정 불필요)
+│       ├── common.sh
+│       ├── safety_guards.sh
+│       ├── os_debian.sh
+│       ├── os_rhel.sh
+│       ├── os_freebsd.sh
+│       └── os_macos.sh
+├── artifacts/                             # discover 결과 (자동 생성)
+│   └── hardening_discover/
+├── docs/
+│   └── manual.md                          # 이 문서
+└── legacy/                                # 이전 v3 스크립트
 ```
 
 ### 1.3 실행 흐름
@@ -155,7 +148,7 @@ hardening/
 - [ ] SSH 키가 등록되어 있는가? (없으면 `SSH_PASSWORD_AUTH=yes` 유지)
 - [ ] 서버 용도에 맞는 `HARDENING_PROFILE` 선택했는가?
 - [ ] 라우터/게이트웨이인 경우 `SYSCTL_DISABLE_IP_FORWARD=false` 설정했는가?
-- [ ] Ansible로 실행하는 경우 `KILL_OTHER_SESSIONS=false` 설정했는가?
+- [ ] Ansible로 실행하는 경우 플레이북이 `KILL_OTHER_SESSIONS`, `ANSIBLE_ACCOUNT`를 자동 설정하는가?
 - [ ] 보안 에이전트(Wazuh, CrowdStrike, Velociraptor)가 이미 설치되어 있는가?
 - [ ] `config.sh` 편집 후 `bash -n config.sh` 로 문법 검증했는가?
 
@@ -163,121 +156,155 @@ hardening/
 
 ## 3. Ansible 플레이북 사용법
 
-### 3.1 하드닝 실행
+### 3.1 전체 프로세스
 
-사전 준비: 스크립트를 `roles/hardening/files/hardening/` 디렉토리로 복사합니다.
+```
+FAM (사전 훈련) — 목적: 스크립트 검증 + 서버 설정값 확보
+ │
+ ├─ ① Discover ──→ artifacts/서버명.yml (포트, 서비스, 에이전트 자동 수집)
+ ├─ ② 검토/수정    (수집 결과 확인, 필요시 포트 추가/제거)
+ └─ ③ 검증 실행    (하드닝 테스트 → 정상 작동 확인 → 이 스냅샷은 버림)
+
+본훈련 (같은 원본 + 사전 공격이 심어진 상태)
+ │
+ ├─ ④ Harden ───→ FAM의 discover 결과(①) 그대로 사용하여 하드닝 적용
+ │                  + 베이스라인 스냅샷 저장 ← 이것이 진짜 기준선
+ └─ ⑤ Check (반복) ──→ ④의 스냅샷 기준으로 drift 감시 / 자동 복원
+```
+
+**핵심:**
+- FAM과 본훈련의 원본 환경(스냅샷)은 동일
+- FAM에서 확보한 discover 결과는 본훈련에서도 유효
+- 본훈련에서 하드닝을 다시 실행해야 함 (사전 공격이 심어진 상태이므로)
+- 하드닝이 공격 흔적도 같이 정리 (백도어 계정, 의심 서비스 등)
+
+### 3.2 자동화팀에 전달할 파일
+
+```
+playbooks/                              → 자동화팀 playbooks/ 에 복사
+    4001_hardening_discover.yml
+    4002_hardening_apply.yml
+    4003_hardening_check.yml
+files/scripts/hardening/                → 자동화팀 files/scripts/ 에 복사
+    config.sh
+    01_baseline_hardening.sh
+    02_check_and_restore.sh
+    lib/
+```
+
+### 3.3 FAM ① Discover — 서버 상태 수집
 
 ```bash
-cd ansible/
-mkdir -p roles/hardening/files/hardening
-cp -r ../config.sh ../01_baseline_hardening.sh ../02_check_and_restore.sh ../lib \
-    roles/hardening/files/hardening/
+ansible-playbook playbooks/4001_hardening_discover.yml -i inventories/lab/hosts.yml
 ```
 
-인벤토리 파일을 준비합니다:
-
-```ini
-# inventory.ini
-[webservers]
-web01 ansible_host=10.0.1.10
-web02 ansible_host=10.0.1.11
-
-[dbservers]
-db01 ansible_host=10.0.2.10
-
-[all:vars]
-ansible_user=deploy
-ansible_become=yes
-```
-
-하드닝 실행 명령어:
-
-```bash
-# 전체 서버 하드닝
-ansible-playbook playbook_harden.yml -i inventory.ini
-
-# 특정 서버만 하드닝
-ansible-playbook playbook_harden.yml -i inventory.ini --limit web01
-
-# SSH 패스워드 인증 허용으로 하드닝
-ansible-playbook playbook_harden.yml -i inventory.ini -e "ssh_password_auth=yes"
-
-# 웹서버 프로파일 강제 지정
-ansible-playbook playbook_harden.yml -i inventory.ini -e "hardening_profile=web"
-```
-
-### 3.2 점검/복원
-
-기본 실행은 점검만 수행합니다 (`--check-only`). 자동 복원을 원하면 `-e "auto_restore=true"`를 추가합니다.
-
-```bash
-# 하드닝 상태 점검만 (기본)
-ansible-playbook playbook_check.yml -i inventory.ini
-
-# 자동 복원 포함
-ansible-playbook playbook_check.yml -i inventory.ini -e "auto_restore=true"
-
-# 특정 서버만 점검
-ansible-playbook playbook_check.yml -i inventory.ini --limit db01
-```
-
-### 3.3 호스트별 예외 설정
-
-특정 호스트에 맞춤 설정이 필요한 경우 `host_vars/` 디렉토리에 `<호스트명>.yml` 파일을 생성합니다.
-
-```bash
-# 템플릿 복사
-cp host_vars/_template.yml host_vars/web01.yml
-```
-
-`host_vars/web01.yml` 편집 예시:
-
-```yaml
-# 웹서버: 추가 포트 허용 및 프로파일 강제 지정
-extra_allowed_ports: "8443/tcp 3306/tcp"
-hardening_profile: "web"
-ssh_password_auth: "yes"
-
-# Docker 서비스 보호
-extra_service_allowlist: "docker containerd"
-```
-
-사용 가능한 오버라이드 항목:
-
-| 항목 | 설명 | 예시 |
-|------|------|------|
-| `extra_allowed_ports` | 자동 감지 외 추가 허용 포트 | `"3306/tcp 8443/tcp"` |
-| `hardening_profile` | 방화벽 프로파일 강제 지정 | `"web"` |
-| `ssh_password_auth` | SSH 패스워드 인증 허용 | `"yes"` |
-| `ssh_permit_root_login` | root SSH 로그인 방식 | `"no"` |
-| `sysctl_disable_ip_forward` | IP 포워딩 비활성화 | `"false"` |
-| `extra_service_allowlist` | 추가 보호 서비스 | `"docker containerd"` |
-| `extra_account_allowlist` | 추가 보호 계정 | `"deploy monitoring"` |
-| `disable_services` | 비활성화 서비스 오버라이드 | `"avahi-daemon cups"` |
-| `tunnel_defense_enabled` | 터널링 방어 비활성화 | `"false"` |
-
-설정 우선순위: `host_vars 오버라이드 > 자동 감지값 > config.sh 기본값`
-
-### 3.4 자동 탐색 항목
-
-`discover.yml`이 각 서버에서 자동으로 감지하는 항목:
+각 서버에 접속하여 자동 수집하는 항목:
 
 | 탐색 항목 | 감지 방법 | 결과 활용 |
 |-----------|-----------|-----------|
-| Ansible 접속 계정 | `ansible_user` 변수 | `ANSIBLE_ACCOUNT`에 설정, 자동 보호 |
-| 리스닝 포트 | Linux: `ss -tlnp`, FreeBSD: `sockstat`, macOS: `lsof` | 프로파일 자동 결정 (80/443=web, 53=dns, 88/389=ad, 514/1514=log) |
-| 방화벽 프로파일 | 포트 조합 분석 | 복수 카테고리 = `full`, 단일 = 해당 프로파일, 없으면 = `base` |
+| 리스닝 포트 | Linux: `ss -tlnp`, FreeBSD: `sockstat`, macOS: `lsof` | 방화벽 허용 포트 목록 |
 | 보안 에이전트 | 프로세스 감지 (pgrep) | 포트/서비스/계정을 allowlist에 자동 추가 |
-| IP 포워딩 상태 | `sysctl -n net.ipv4.ip_forward` | 이미 활성화되어 있으면 `SYSCTL_DISABLE_IP_FORWARD=false` |
-| SSH 키 존재 여부 | `~/.ssh/authorized_keys` 확인 | 키 없으면 `SSH_PASSWORD_AUTH=yes` 자동 설정 |
+| IP 포워딩 상태 | `sysctl -n net.ipv4.ip_forward` | 활성화 상태면 `sysctl_disable_ip_forward=false` |
+| SSH 키 존재 여부 | `~/.ssh/authorized_keys` 확인 | 키 없으면 `ssh_password_auth=yes` |
+| Ansible 접속 계정 | `ansible_user` 변수 | `ANSIBLE_ACCOUNT`에 설정, 자동 보호 |
 
-감지 대상 보안 에이전트 정의 (`defaults/main.yml`):
+감지 대상 보안 에이전트 (플레이북 내 `vars:` 섹션에 정의):
 
 | 에이전트 | 프로세스 | 서비스 | 포트 | 계정 |
 |----------|---------|--------|------|------|
 | Wazuh | `wazuh-agentd`, `wazuh-modulesd`, `ossec-agentd` | `wazuh-agent` | `1514/tcp`, `1515/tcp` | `wazuh`, `ossec` |
 | CrowdStrike | `falcon-sensor` | `falcon-sensor` | - | - |
 | Velociraptor | `velociraptor_client`, `velociraptor` | `velociraptor_client` | `8000/tcp` | - |
+
+의심 포트(4444, 5555, 6666, 7777, 8888, 9999, 1234, 31337, 12345, 54321)는 자동 제외됩니다.
+
+결과: `artifacts/hardening_discover/<hostname>.yml`
+
+### 3.4 FAM ② 검토
+
+```bash
+ls artifacts/hardening_discover/
+cat artifacts/hardening_discover/bps_dmz_git.yml
+```
+
+생성된 파일 예시:
+
+```yaml
+# 자동 수집: 2026-04-11T10:00:00
+# 서버: bps_dmz_git (Ubuntu 24.04)
+hardening_allowed_ports: "22/tcp 80/tcp 443/tcp 1514/tcp"
+hardening_service_allowlist: "wazuh-agent"
+hardening_account_allowlist: "wazuh"
+hardening_ip_forward: "true"
+hardening_ssh_password_auth: "no"
+```
+
+검토 후 필요시 수정:
+- 포트 추가: `"22/tcp 80/tcp 443/tcp 1514/tcp 3306/tcp"` (3306 추가)
+- 포트 제거: 불필요한 포트 삭제
+- 서비스/계정 추가: Docker 등 보호할 서비스 추가
+
+### 3.5 FAM ③ 검증 실행
+
+```bash
+# 하드닝 테스트
+ansible-playbook playbooks/4002_hardening_apply.yml -i inventories/lab/hosts.yml \
+  -e "@artifacts/hardening_discover/bps_dmz_git.yml" --limit bps_dmz_git
+
+# 정상 작동 확인 (drift 0건이면 정상)
+ansible-playbook playbooks/4003_hardening_check.yml -i inventories/lab/hosts.yml \
+  -e "@artifacts/hardening_discover/bps_dmz_git.yml" --limit bps_dmz_git
+```
+
+이 스냅샷은 본훈련에서 다시 만들므로 버려도 됩니다. 목적은 스크립트 검증입니다.
+
+### 3.6 본훈련 ④ Harden — 하드닝 적용
+
+```bash
+# FAM에서 확보한 discover 결과를 그대로 사용
+ansible-playbook playbooks/4002_hardening_apply.yml -i inventories/lab/hosts.yml \
+  -e "@artifacts/hardening_discover/bps_dmz_git.yml" --limit bps_dmz_git
+```
+
+이때 저장되는 베이스라인 스냅샷(`/var/backups/hardening_baseline/`)이 **진짜 기준선**입니다.
+
+### 3.7 본훈련 ⑤ Check — 주기적 점검
+
+```bash
+# 점검만
+ansible-playbook playbooks/4003_hardening_check.yml -i inventories/lab/hosts.yml \
+  -e "@artifacts/hardening_discover/bps_dmz_git.yml" --limit bps_dmz_git
+
+# 자동 복원 (공격자가 설정 변경한 경우)
+ansible-playbook playbooks/4003_hardening_check.yml -i inventories/lab/hosts.yml \
+  -e "@artifacts/hardening_discover/bps_dmz_git.yml" -e "auto_restore=true" --limit bps_dmz_git
+```
+
+### 3.8 특정 하드닝 항목 비활성화
+
+```bash
+# SSH 하드닝만 끄기
+ansible-playbook playbooks/4002_hardening_apply.yml -i inventories/lab/hosts.yml \
+  -e "@artifacts/hardening_discover/bps_dmz_git.yml" \
+  -e "HARDEN_SSH=false" --limit bps_dmz_git
+
+# 방화벽 + 터널링 방어 끄기
+  -e "HARDEN_FIREWALL=false HARDEN_TUNNEL_DEFENSE=false"
+```
+
+### 3.9 `-e "@file"` 패턴
+
+자동화팀의 inventory/host_vars를 건드리지 않고, discover 결과 파일을 `-e "@file"`로 전달합니다:
+
+```bash
+# 단일 서버
+ansible-playbook playbooks/4002_hardening_apply.yml -i inventories/lab/hosts.yml \
+  -e "@artifacts/hardening_discover/bps_dmz_git.yml" --limit bps_dmz_git
+
+# 또는 discover 결과를 자동화팀 host_vars에 복사하여 사용 가능
+cp artifacts/hardening_discover/bps_dmz_git.yml \
+   inventories/lab/host_vars/bps_dmz_git_hardening.yml
+```
 
 ---
 
