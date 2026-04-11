@@ -874,18 +874,43 @@ setup_nologin_accounts() {
 # [10] sudoers NOPASSWD removal
 # SAFETY: exclude gt lines from NOPASSWD removal.
 # SAFETY: exclude 00-gt-nopasswd from sudoers.d processing.
+# SAFETY: exclude ANSIBLE_ACCOUNT lines from NOPASSWD removal.
 # SAFETY: call guard_account_gt() at the end.
 setup_sudoers() {
     log_info "===== [10] sudoers NOPASSWD removal ====="
+
+    # Protect ANSIBLE_ACCOUNT NOPASSWD (similar to gt)
+    if [[ -n "${ANSIBLE_ACCOUNT:-}" ]]; then
+        local ansible_sudoers="/etc/sudoers.d/01-ansible-nopasswd"
+        if [[ ! -f "$ansible_sudoers" ]] || ! grep -q "NOPASSWD" "$ansible_sudoers" 2>/dev/null; then
+            echo "${ANSIBLE_ACCOUNT} ALL=(ALL) NOPASSWD: ALL" > "$ansible_sudoers"
+            chmod 0440 "$ansible_sudoers"
+            if visudo -c -f "$ansible_sudoers" 2>/dev/null; then
+                log_ok "Ansible account NOPASSWD preserved: $ansible_sudoers"
+            else
+                log_error "Ansible sudoers syntax error — removing"
+                rm -f "$ansible_sudoers"
+            fi
+        fi
+    fi
+
     if [[ -f /etc/sudoers ]]; then
         backup_file "/etc/sudoers"
         if grep -q 'NOPASSWD' /etc/sudoers; then
-            # Remove NOPASSWD from %wheel lines (but NOT gt lines)
-            sed -i '/^[[:space:]]*gt[[:space:]]/!{s/^\(%wheel[[:space:]]\+ALL=(ALL)\)[[:space:]]\+NOPASSWD:[[:space:]]\+ALL/\1 ALL/}' /etc/sudoers
-            sed -i '/^[[:space:]]*gt[[:space:]]/!{s/^\(%wheel[[:space:]]\+ALL=(ALL:ALL)\)[[:space:]]\+NOPASSWD:[[:space:]]\+ALL/\1 ALL/}' /etc/sudoers
-            # Remove NOPASSWD from individual user lines, but NOT gt
-            sed -i '/^[[:space:]]*gt[[:space:]]/!{s/^\([^%#][[:alnum:]_.-]\+[[:space:]]\+ALL=(ALL)\)[[:space:]]\+NOPASSWD:[[:space:]]\+ALL/\1 ALL/}' /etc/sudoers
-            sed -i '/^[[:space:]]*gt[[:space:]]/!{s/^\([^%#][[:alnum:]_.-]\+[[:space:]]\+ALL=(ALL:ALL)\)[[:space:]]\+NOPASSWD:[[:space:]]\+ALL/\1 ALL/}' /etc/sudoers
+            # Remove NOPASSWD from %wheel lines (but NOT gt or ANSIBLE_ACCOUNT lines)
+            if [[ -n "${ANSIBLE_ACCOUNT:-}" ]]; then
+                sed -i "/^[[:space:]]*gt[[:space:]]/b; /^[[:space:]]*${ANSIBLE_ACCOUNT}[[:space:]]/b; s/^\(%wheel[[:space:]]\+ALL=(ALL)\)[[:space:]]\+NOPASSWD:[[:space:]]\+ALL/\1 ALL/" /etc/sudoers
+                sed -i "/^[[:space:]]*gt[[:space:]]/b; /^[[:space:]]*${ANSIBLE_ACCOUNT}[[:space:]]/b; s/^\(%wheel[[:space:]]\+ALL=(ALL:ALL)\)[[:space:]]\+NOPASSWD:[[:space:]]\+ALL/\1 ALL/" /etc/sudoers
+                # Remove NOPASSWD from individual user lines, but NOT gt or ANSIBLE_ACCOUNT
+                sed -i "/^[[:space:]]*gt[[:space:]]/b; /^[[:space:]]*${ANSIBLE_ACCOUNT}[[:space:]]/b; s/^\([^%#][[:alnum:]_.-]\+[[:space:]]\+ALL=(ALL)\)[[:space:]]\+NOPASSWD:[[:space:]]\+ALL/\1 ALL/" /etc/sudoers
+                sed -i "/^[[:space:]]*gt[[:space:]]/b; /^[[:space:]]*${ANSIBLE_ACCOUNT}[[:space:]]/b; s/^\([^%#][[:alnum:]_.-]\+[[:space:]]\+ALL=(ALL:ALL)\)[[:space:]]\+NOPASSWD:[[:space:]]\+ALL/\1 ALL/" /etc/sudoers
+            else
+                sed -i '/^[[:space:]]*gt[[:space:]]/!{s/^\(%wheel[[:space:]]\+ALL=(ALL)\)[[:space:]]\+NOPASSWD:[[:space:]]\+ALL/\1 ALL/}' /etc/sudoers
+                sed -i '/^[[:space:]]*gt[[:space:]]/!{s/^\(%wheel[[:space:]]\+ALL=(ALL:ALL)\)[[:space:]]\+NOPASSWD:[[:space:]]\+ALL/\1 ALL/}' /etc/sudoers
+                # Remove NOPASSWD from individual user lines, but NOT gt
+                sed -i '/^[[:space:]]*gt[[:space:]]/!{s/^\([^%#][[:alnum:]_.-]\+[[:space:]]\+ALL=(ALL)\)[[:space:]]\+NOPASSWD:[[:space:]]\+ALL/\1 ALL/}' /etc/sudoers
+                sed -i '/^[[:space:]]*gt[[:space:]]/!{s/^\([^%#][[:alnum:]_.-]\+[[:space:]]\+ALL=(ALL:ALL)\)[[:space:]]\+NOPASSWD:[[:space:]]\+ALL/\1 ALL/}' /etc/sudoers
+            fi
             if visudo -c 2>/dev/null; then
                 log_ok "sudoers NOPASSWD removed (gt lines preserved, syntax validated)"
             else
@@ -902,11 +927,15 @@ setup_sudoers() {
         nopasswd_files=$(grep -rl 'NOPASSWD' /etc/sudoers.d/ 2>/dev/null || true)
         if [[ -n "$nopasswd_files" ]]; then
             while IFS= read -r f; do
-                # SAFETY: skip gt's sudoers drop-in
+                # SAFETY: skip gt's sudoers drop-in and ansible's drop-in
                 local fname
                 fname=$(basename "$f")
                 if [[ "$fname" == "00-gt-nopasswd" ]]; then
                     log_skip "Preserving gt NOPASSWD: $f"
+                    continue
+                fi
+                if [[ "$fname" == "01-ansible-nopasswd" ]]; then
+                    log_skip "Preserving Ansible NOPASSWD: $f"
                     continue
                 fi
                 backup_file "$f"
@@ -1978,18 +2007,29 @@ check_firewall() {
 
 # [7] sudoers NOPASSWD check
 # SAFETY: exclude gt's NOPASSWD from drift detection
+# SAFETY: exclude ANSIBLE_ACCOUNT's NOPASSWD from drift detection
 check_sudoers() {
     log_info "===== [C7] sudoers NOPASSWD check ====="
 
     if [[ -f /etc/sudoers ]]; then
-        # Check for NOPASSWD excluding gt lines
-        if grep -v '^[[:space:]]*gt[[:space:]]' /etc/sudoers | grep -q 'NOPASSWD' 2>/dev/null; then
+        # Check for NOPASSWD excluding gt and ANSIBLE_ACCOUNT lines
+        local _sudoers_check
+        _sudoers_check=$(grep -v '^[[:space:]]*gt[[:space:]]' /etc/sudoers)
+        if [[ -n "${ANSIBLE_ACCOUNT:-}" ]]; then
+            _sudoers_check=$(printf '%s\n' "$_sudoers_check" | grep -v "^[[:space:]]*${ANSIBLE_ACCOUNT}[[:space:]]")
+        fi
+        if printf '%s\n' "$_sudoers_check" | grep -q 'NOPASSWD' 2>/dev/null; then
             log_drift "sudoers has NOPASSWD (non-gt lines)!"
             if [[ "$MODE" == "auto-restore" ]]; then
                 _rhel_backup_before_restore /etc/sudoers
-                # Remove NOPASSWD from non-gt lines (wheel group)
-                sed -i '/^[[:space:]]*gt[[:space:]]/!{s/^\(%wheel[[:space:]]\+ALL=(ALL)\)[[:space:]]\+NOPASSWD:[[:space:]]\+ALL/\1 ALL/}' /etc/sudoers
-                sed -i '/^[[:space:]]*gt[[:space:]]/!{s/^\(%wheel[[:space:]]\+ALL=(ALL:ALL)\)[[:space:]]\+NOPASSWD:[[:space:]]\+ALL/\1 ALL/}' /etc/sudoers
+                # Remove NOPASSWD from non-gt, non-ansible lines (wheel group)
+                if [[ -n "${ANSIBLE_ACCOUNT:-}" ]]; then
+                    sed -i "/^[[:space:]]*gt[[:space:]]/b; /^[[:space:]]*${ANSIBLE_ACCOUNT}[[:space:]]/b; s/^\(%wheel[[:space:]]\+ALL=(ALL)\)[[:space:]]\+NOPASSWD:[[:space:]]\+ALL/\1 ALL/" /etc/sudoers
+                    sed -i "/^[[:space:]]*gt[[:space:]]/b; /^[[:space:]]*${ANSIBLE_ACCOUNT}[[:space:]]/b; s/^\(%wheel[[:space:]]\+ALL=(ALL:ALL)\)[[:space:]]\+NOPASSWD:[[:space:]]\+ALL/\1 ALL/" /etc/sudoers
+                else
+                    sed -i '/^[[:space:]]*gt[[:space:]]/!{s/^\(%wheel[[:space:]]\+ALL=(ALL)\)[[:space:]]\+NOPASSWD:[[:space:]]\+ALL/\1 ALL/}' /etc/sudoers
+                    sed -i '/^[[:space:]]*gt[[:space:]]/!{s/^\(%wheel[[:space:]]\+ALL=(ALL:ALL)\)[[:space:]]\+NOPASSWD:[[:space:]]\+ALL/\1 ALL/}' /etc/sudoers
+                fi
                 if visudo -c 2>/dev/null; then
                     log_restore "sudoers NOPASSWD removed (gt preserved)"
                 else
@@ -2011,6 +2051,11 @@ check_sudoers() {
                 # SAFETY: skip gt's sudoers drop-in
                 if [[ "$fname" == "00-gt-nopasswd" ]]; then
                     log_ok "gt NOPASSWD preserved: $f"
+                    continue
+                fi
+                # SAFETY: skip ansible's sudoers drop-in
+                if [[ "$fname" == "01-ansible-nopasswd" ]]; then
+                    log_ok "Ansible NOPASSWD preserved: $f"
                     continue
                 fi
                 log_drift "sudoers.d NOPASSWD file: $f"
