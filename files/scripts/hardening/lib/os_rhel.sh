@@ -654,6 +654,46 @@ setup_firewall() {
     firewall-cmd --reload 2>/dev/null || log_warn "firewalld reload failed"
     log_ok "firewalld reloaded (profile: ${RHEL_FIREWALLD_PROFILE})"
 
+    # -- Outbound policy --
+    if [[ "${OUTBOUND_POLICY}" == "restrict" ]]; then
+        log_info "Applying outbound restrict policy via firewalld direct rules"
+
+        # Drop all outbound by default (direct rule, lowest priority)
+        firewall-cmd --permanent --direct --add-rule ipv4 filter OUTPUT 10 -j DROP 2>/dev/null || true
+        firewall-cmd --permanent --direct --add-rule ipv6 filter OUTPUT 10 -j DROP 2>/dev/null || true
+
+        # Allow established/related
+        firewall-cmd --permanent --direct --add-rule ipv4 filter OUTPUT 0 -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
+        firewall-cmd --permanent --direct --add-rule ipv6 filter OUTPUT 0 -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
+
+        # Allow loopback
+        firewall-cmd --permanent --direct --add-rule ipv4 filter OUTPUT 0 -o lo -j ACCEPT 2>/dev/null || true
+        firewall-cmd --permanent --direct --add-rule ipv6 filter OUTPUT 0 -o lo -j ACCEPT 2>/dev/null || true
+
+        # Allow specified outbound ports
+        local _priority=1
+        for port_proto in ${OUTBOUND_ALLOWED_PORTS}; do
+            local _port="${port_proto%%/*}"
+            local _proto="${port_proto##*/}"
+            firewall-cmd --permanent --direct --add-rule ipv4 filter OUTPUT $_priority -p "$_proto" --dport "$_port" -j ACCEPT 2>/dev/null || true
+            firewall-cmd --permanent --direct --add-rule ipv6 filter OUTPUT $_priority -p "$_proto" --dport "$_port" -j ACCEPT 2>/dev/null || true
+            log_ok "firewalld outbound allow: ${port_proto}"
+            _priority=$((_priority + 1))
+        done
+
+        # ICMP
+        if [[ "${OUTBOUND_ALLOW_ICMP}" == "true" ]]; then
+            firewall-cmd --permanent --direct --add-rule ipv4 filter OUTPUT 1 -p icmp --icmp-type echo-request -j ACCEPT 2>/dev/null || true
+            firewall-cmd --permanent --direct --add-rule ipv6 filter OUTPUT 1 -p icmpv6 --icmpv6-type echo-request -j ACCEPT 2>/dev/null || true
+            log_ok "firewalld outbound ICMP: allowed"
+        fi
+
+        firewall-cmd --reload 2>/dev/null || true
+        log_ok "firewalld outbound restrict policy applied"
+    else
+        log_ok "firewalld outbound policy: allow (default — no restrictions)"
+    fi
+
     # -- Write tunnel defense direct rules --
     log_info "  Writing tunnel defense direct rules to firewalld"
     _rhel_firewalld_write_tunnel_rules

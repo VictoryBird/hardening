@@ -317,6 +317,36 @@ setup_firewall() {
             pf_port_rules="pass in quick proto tcp from any to any port 22 flags S/SA keep state"
         fi
 
+        # -- Build outbound rules based on OUTBOUND_POLICY --
+        local pf_outbound_rules=""
+        if [[ "${OUTBOUND_POLICY}" == "restrict" ]]; then
+            # Build outbound port list for pf macro
+            local _out_ports=""
+            for port_proto in ${OUTBOUND_ALLOWED_PORTS}; do
+                local _port="${port_proto%%/*}"
+                _out_ports="${_out_ports} ${_port}"
+            done
+            _out_ports=$(echo "$_out_ports" | xargs)  # trim
+
+            pf_outbound_rules="# Outbound policy: restrict
+allowed_tcp_out = \"{ $(echo "$_out_ports" | tr ' ' ', ') }\"
+block out all
+pass out quick on lo0 all
+pass out quick proto tcp to port \$allowed_tcp_out keep state
+pass out quick proto udp to port 53 keep state
+pass out quick proto udp to port 123 keep state"
+            if [[ "${OUTBOUND_ALLOW_ICMP}" == "true" ]]; then
+                pf_outbound_rules="${pf_outbound_rules}
+pass out quick proto icmp all keep state
+pass out quick proto icmp6 all keep state"
+            fi
+            log_ok "pf outbound restrict policy prepared"
+        else
+            pf_outbound_rules="# Outbound policy: allow (unrestricted)
+pass out quick all keep state"
+            log_ok "pf outbound policy: allow (unrestricted)"
+        fi
+
         # APPEND rules — do NOT overwrite Apple anchors
         cat >> "$pf_conf" <<PF_EOF
 
@@ -326,7 +356,9 @@ setup_firewall() {
 # Block all incoming by default, allow established and related
 block in log all
 pass in quick on lo0 all
-pass out quick all keep state
+
+# Outbound rules
+${pf_outbound_rules}
 
 # Allow inbound on specified ports
 ${pf_port_rules}

@@ -348,20 +348,17 @@ set loginterface \$ext_if
 # Scrub
 scrub in all
 
-# Default: block inbound, allow outbound
+# Default: block inbound
 block in log all
-pass out all keep state
 
 # Allow inbound on specified ports
 pass in on \$ext_if proto tcp from any to any port \$allowed_tcp_ports flags S/SA keep state
 
-# ICMP: allow ping (echo-request/echo-reply) — workstations need ping
+# ICMP inbound: allow ping (echo-request/echo-reply)
 pass in  inet proto icmp icmp-type echoreq keep state
-pass out inet proto icmp icmp-type echoreq keep state
 
-# ICMPv6 — allow basic types (do NOT disable IPv6)
+# ICMPv6 inbound — allow basic types (do NOT disable IPv6)
 pass in  inet6 proto icmp6 icmp6-type { echoreq, echorep, unreach, toobig, timex, paramprob, routeradv, routersol, neighbradv, neighbrsol } keep state
-pass out inet6 proto icmp6 all keep state
 
 # Anti-spoofing
 antispoof quick for \$ext_if
@@ -373,6 +370,38 @@ block out log quick on \$ext_if proto icmp from any to any max-pkt-size $((20 + 
 # Tunnel defense: block outbound DNS over TCP (tunnels use sustained TCP 53)
 block out log quick on \$ext_if proto tcp from any to any port 53
 PF_CONF_EOF
+
+    # -- Outbound policy --
+    if [[ "${OUTBOUND_POLICY}" == "restrict" ]]; then
+        # Build outbound port list for pf macro
+        local _out_ports=""
+        for port_proto in ${OUTBOUND_ALLOWED_PORTS}; do
+            local _port="${port_proto%%/*}"
+            _out_ports="${_out_ports} ${_port}"
+        done
+        _out_ports=$(echo "$_out_ports" | xargs)  # trim
+
+        cat >> "$pf_conf" <<PFEOF
+
+# Outbound policy: restrict
+allowed_tcp_out = "{ $(echo "$_out_ports" | tr ' ' ', ') }"
+block out all
+pass out proto tcp to port \$allowed_tcp_out keep state
+pass out proto udp to port 53 keep state
+pass out proto udp to port 123 keep state
+PFEOF
+        if [[ "${OUTBOUND_ALLOW_ICMP}" == "true" ]]; then
+            echo "pass out proto icmp all keep state" >> "$pf_conf"
+            echo "pass out proto icmp6 all keep state" >> "$pf_conf"
+        fi
+        # Always allow loopback
+        echo "pass out on lo0 all" >> "$pf_conf"
+
+        log_ok "pf outbound restrict policy applied"
+    else
+        echo "pass out all keep state" >> "$pf_conf"
+        log_ok "pf outbound policy: allow (unrestricted)"
+    fi
 
     chmod 0600 "$pf_conf"
     log_ok "pf.conf written (profile: ${BSD_PF_PROFILE})"

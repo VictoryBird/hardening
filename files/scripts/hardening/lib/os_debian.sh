@@ -390,6 +390,16 @@ ${DEB_UFW_TUNNEL_MARKER}
 COMMIT
 # TUNNEL_HARDENING_BLOCK_END
 AFTER_RULES_EOF
+
+        # Outbound ICMP allow when restrict mode + ICMP allowed
+        if [[ "${OUTBOUND_POLICY}" == "restrict" ]] && [[ "${OUTBOUND_ALLOW_ICMP}" == "true" ]]; then
+            # Insert ICMP echo-request allow before the COMMIT line in after.rules
+            sed -i '/^# TUNNEL_HARDENING_BLOCK_END/i\
+# Allow outbound ICMP echo-request (ping) — outbound restrict mode\
+-A ufw-before-output -p icmp --icmp-type echo-request -j ACCEPT' "${after_rules}"
+            log_ok "  after.rules: outbound ICMP echo-request allow inserted"
+        fi
+
         log_ok "  after.rules: tunnel defense block inserted"
     fi
 
@@ -669,8 +679,34 @@ setup_ufw() {
 
     # -- Default policies --
     ufw default deny incoming  2>/dev/null || true
-    ufw default allow outgoing 2>/dev/null || true
-    log_ok "UFW default policies set (deny incoming / allow outgoing)"
+
+    # ── 아웃바운드 정책 ─────────────────────────────────────────────
+    if [[ "${OUTBOUND_POLICY}" == "restrict" ]]; then
+        ufw default deny outgoing 2>/dev/null || true
+        log_ok "UFW outbound policy: deny (restrict mode)"
+
+        # 허용할 아웃바운드 포트 추가
+        local port_proto
+        for port_proto in ${OUTBOUND_ALLOWED_PORTS}; do
+            ufw allow out "$port_proto" 2>/dev/null || true
+            log_ok "UFW outbound allow: $port_proto"
+        done
+
+        # ICMP
+        if [[ "${OUTBOUND_ALLOW_ICMP}" == "true" ]]; then
+            # UFW doesn't have a direct ICMP out rule via CLI
+            # This is handled via before.rules or after.rules
+            log_info "UFW outbound ICMP: allowed (via before.rules default)"
+        fi
+
+        # DNS UDP 아웃바운드 (53/udp) 허용 확인 — 이미 OUTBOUND_ALLOWED_PORTS에 있어야 함
+        if ! echo "${OUTBOUND_ALLOWED_PORTS}" | grep -q "53/udp"; then
+            log_warn "OUTBOUND_ALLOWED_PORTS에 53/udp 없음 — DNS 쿼리 불가할 수 있음"
+        fi
+    else
+        ufw default allow outgoing 2>/dev/null || true
+        log_ok "UFW outbound policy: allow (unrestricted)"
+    fi
 
     # -- Allow port rules --
     for port_proto in $profile_ports; do
