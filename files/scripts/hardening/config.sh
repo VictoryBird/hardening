@@ -262,8 +262,8 @@ HIDEPID_ENABLED="${HIDEPID_ENABLED:-true}"
 # 로그인 실패 허용 횟수. 이 횟수 초과 시 계정 잠금
 FAILLOCK_DENY="${FAILLOCK_DENY:-5}"
 
-# 잠금 해제까지 대기 시간 (초). 900 = 15분
-FAILLOCK_UNLOCK_TIME="${FAILLOCK_UNLOCK_TIME:-900}"
+# 잠금 해제까지 대기 시간 (초). 300 = 5분
+FAILLOCK_UNLOCK_TIME="${FAILLOCK_UNLOCK_TIME:-300}"
 
 # root 계정도 잠금 정책 적용 여부
 # true로 설정하면 root도 잠금될 수 있으니 주의하세요
