@@ -54,6 +54,9 @@ readonly MAC_FILES_O_NORW="/etc/ssh/sshd_config /etc/sysctl.conf /etc/pf.conf"
 readonly MAC_SYSCTL_KEYS="net.inet.ip.forwarding net.inet.ip.redirect net.inet6.ip6.forwarding"
 readonly MAC_SYSCTL_VALS="0 0 0"
 
+# --- Custom allowed ports (from config.sh) ---
+MAC_CUSTOM_ALLOWED_PORTS="${CUSTOM_ALLOWED_PORTS}"
+
 # --- Allowlists (from config.sh) ---
 MAC_WHITELISTED_PORTS="${WHITELISTED_PORTS}"
 MAC_ACCOUNT_ALLOWLIST="${ACCOUNT_ALLOWLIST}"
@@ -295,8 +298,27 @@ setup_firewall() {
     else
         backup_file "$pf_conf"
 
+        # -- Build allowed port rules --
+        local pf_port_rules=""
+        if [[ -n "${MAC_CUSTOM_ALLOWED_PORTS}" ]]; then
+            # CUSTOM_ALLOWED_PORTS가 설정됨 — 해당 포트 사용
+            local port_nums=""
+            port_nums=$(echo "${MAC_CUSTOM_ALLOWED_PORTS}" | tr ' ' '\n' | sed 's|/tcp||; s|/udp||' | sort -un | tr '\n' ' ' | sed 's/ *$//')
+            # SSH 포트(22) 포함 확인
+            if ! echo " $port_nums " | grep -q " 22 "; then
+                port_nums="22 ${port_nums}"
+            fi
+            local port_list
+            port_list=$(echo "$port_nums" | tr ' ' ',')
+            pf_port_rules="pass in quick proto tcp from any to any port { ${port_list} } flags S/SA keep state"
+            log_info "pf: CUSTOM_ALLOWED_PORTS 사용 (ports: ${port_nums})"
+        else
+            # 폴백: SSH만 허용
+            pf_port_rules="pass in quick proto tcp from any to any port 22 flags S/SA keep state"
+        fi
+
         # APPEND rules — do NOT overwrite Apple anchors
-        cat >> "$pf_conf" <<'PF_EOF'
+        cat >> "$pf_conf" <<PF_EOF
 
 # HARDENING_PF_RULES_BEGIN
 # Auto-generated hardening rules — do not edit manually
@@ -306,8 +328,8 @@ block in log all
 pass in quick on lo0 all
 pass out quick all keep state
 
-# Allow SSH inbound
-pass in quick proto tcp from any to any port 22 flags S/SA keep state
+# Allow inbound on specified ports
+${pf_port_rules}
 
 # Allow established connections
 pass in quick proto tcp from any to any flags A/A keep state

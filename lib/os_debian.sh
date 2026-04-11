@@ -643,17 +643,29 @@ setup_ufw() {
         log_info "SSH listening port detected: ${detected_ssh_port}/tcp (non-standard)"
     fi
 
-    # -- UFW profile ports --
-    local profile_ports="${DEB_UFW_PROFILES[$DEB_UFW_PROFILE]:-}"
-    if [[ -z "$profile_ports" ]]; then
-        log_warn "Unknown UFW profile: ${DEB_UFW_PROFILE} — using base"
-        profile_ports="${DEB_UFW_PROFILES[base]}"
+    # -- UFW allowed ports --
+    local profile_ports=""
+    if [[ -n "${DEB_CUSTOM_ALLOWED_PORTS}" ]]; then
+        # CUSTOM_ALLOWED_PORTS가 설정됨 — 프로파일 무시, 이 포트만 사용
+        profile_ports="${DEB_CUSTOM_ALLOWED_PORTS}"
+        # SSH 포트가 포함되어 있지 않으면 자동 추가
+        if ! echo "$profile_ports" | grep -qE "(^| )${detected_ssh_port}/tcp( |$)"; then
+            profile_ports="${detected_ssh_port}/tcp ${profile_ports}"
+        fi
+        log_info "UFW: CUSTOM_ALLOWED_PORTS 사용 (ports: ${profile_ports})"
+    else
+        # 폴백: 프로파일 기반 포트
+        profile_ports="${DEB_UFW_PROFILES[$DEB_UFW_PROFILE]:-}"
+        if [[ -z "$profile_ports" ]]; then
+            log_warn "Unknown UFW profile: ${DEB_UFW_PROFILE} — using base"
+            profile_ports="${DEB_UFW_PROFILES[base]}"
+        fi
+        if [[ "$detected_ssh_port" != "22" ]]; then
+            profile_ports="${profile_ports//22\/tcp/${detected_ssh_port}\/tcp}"
+            log_info "UFW profile SSH port replaced: 22/tcp -> ${detected_ssh_port}/tcp"
+        fi
+        log_info "UFW profile: ${DEB_UFW_PROFILE} (ports: ${profile_ports})"
     fi
-    if [[ "$detected_ssh_port" != "22" ]]; then
-        profile_ports="${profile_ports//22\/tcp/${detected_ssh_port}\/tcp}"
-        log_info "UFW profile SSH port replaced: 22/tcp -> ${detected_ssh_port}/tcp"
-    fi
-    log_info "UFW profile: ${DEB_UFW_PROFILE} (ports: ${profile_ports})"
 
     # -- Default policies --
     ufw default deny incoming  2>/dev/null || true

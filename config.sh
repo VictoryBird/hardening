@@ -10,41 +10,49 @@
 # 빠른 설정 가이드
 # ─────────────────────────────────────────────────────────────────────────────
 #
-#  1. 용도에 맞는 방화벽 프로파일 선택 (HARDENING_PROFILE)
-#     - 웹서버: "web"  |  AD서버: "ad"  |  로그서버: "log"
+#  [권장] Ansible 2단계 워크플로:
+#    1단계(FAM): playbook_discover.yml → host_vars 자동 생성
+#    2단계(본훈련): playbook_harden.yml → host_vars 기반 하드닝
+#    → 이 경우 CUSTOM_ALLOWED_PORTS가 자동 설정되며 HARDENING_PROFILE은 무시됩니다.
 #
-#  2. SSH 키가 없으면 SSH_PASSWORD_AUTH를 "yes"로 유지
+#  [수동 실행] CUSTOM_ALLOWED_PORTS 또는 HARDENING_PROFILE 사용:
+#    - CUSTOM_ALLOWED_PORTS가 설정되면 해당 포트만 허용 (프로파일 무시)
+#    - CUSTOM_ALLOWED_PORTS가 비어있으면 HARDENING_PROFILE 폴백
+#
+#  1. SSH 키가 없으면 SSH_PASSWORD_AUTH를 "yes"로 유지
 #     - "no"로 설정하면 키 없이는 접속 불가!
 #
-#  3. 라우터/게이트웨이에서는 SYSCTL_DISABLE_IP_FORWARD를 "false"로 설정
+#  2. 라우터/게이트웨이에서는 SYSCTL_DISABLE_IP_FORWARD를 "false"로 설정
 #
-#  4. 환경변수로 값 오버라이드 가능 (Ansible 등에서 활용)
-#     예: HARDENING_PROFILE=web SSH_PASSWORD_AUTH=yes ./01_baseline_hardening.sh
+#  3. 환경변수로 값 오버라이드 가능 (Ansible 등에서 활용)
+#     예: CUSTOM_ALLOWED_PORTS="22/tcp 80/tcp 443/tcp" ./01_baseline_hardening.sh
 #
-#  5. 설정 변경 후 반드시 bash -n config.sh 로 문법 검증
+#  4. 설정 변경 후 반드시 bash -n config.sh 로 문법 검증
 #
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 방화벽 프로파일
+# 인바운드 허용 포트 (주 설정)
 # ═══════════════════════════════════════════════════════════════════════════
-# 서버 용도에 맞는 프로파일을 선택하세요.
+# 허용할 포트를 공백 구분으로 지정하세요. (예: "22/tcp 80/tcp 443/tcp")
+# 이 값이 설정되면 HARDENING_PROFILE은 무시됩니다.
+# Ansible host_vars 모드에서는 이 값이 자동으로 채워집니다.
+# SSH 포트는 자동 감지되어 추가되므로 생략해도 됩니다.
+CUSTOM_ALLOWED_PORTS="${CUSTOM_ALLOWED_PORTS:-}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 방화벽 프로파일 (폴백, CUSTOM_ALLOWED_PORTS가 비어있을 때만 사용)
+# ═══════════════════════════════════════════════════════════════════════════
+# [DEPRECATED] host_vars가 있으면 무시됩니다.
+# CUSTOM_ALLOWED_PORTS가 비어있을 때만 폴백으로 사용됩니다.
 #   base   : SSH(22)만 인바운드 허용
 #   web    : SSH + HTTP(80) + HTTPS(443)
 #   ad     : SSH + DNS(53) + Kerberos(88) + LDAP(389,636) + GC(3268,3269)
 #   log    : SSH + Syslog(514) + Wazuh(1514,1515,1516)
 #   full   : 위 전부
-#   custom : CUSTOM_ALLOWED_PORTS에 직접 지정
 HARDENING_PROFILE="${HARDENING_PROFILE:-base}"
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# 추가 인바운드 허용 포트
-# ═══════════════════════════════════════════════════════════════════════════
-# 프로파일 외 추가로 허용할 포트를 공백 구분으로 지정하세요.
-# 예: "3306/tcp 5432/tcp 8080/tcp"
-CUSTOM_ALLOWED_PORTS="${CUSTOM_ALLOWED_PORTS:-}"
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -301,18 +301,31 @@ setup_firewall() {
         log_info "SSH listening port detected: ${detected_ssh_port} (non-standard)"
     fi
 
-    # -- pf profile ports --
-    local profile_ports="${BSD_PF_PROFILES[$BSD_PF_PROFILE]:-}"
-    if [[ -z "$profile_ports" ]]; then
-        log_warn "Unknown pf profile: ${BSD_PF_PROFILE} — using base"
-        profile_ports="${BSD_PF_PROFILES[base]}"
+    # -- pf allowed ports --
+    local profile_ports=""
+    if [[ -n "${BSD_CUSTOM_ALLOWED_PORTS}" ]]; then
+        # CUSTOM_ALLOWED_PORTS가 설정됨 — 프로파일 무시, 이 포트만 사용
+        # port/tcp 형식에서 포트 번호만 추출 (pf는 포트 번호만 사용)
+        profile_ports=$(echo "${BSD_CUSTOM_ALLOWED_PORTS}" | tr ' ' '\n' | sed 's|/tcp||; s|/udp||' | sort -un | tr '\n' ' ' | sed 's/ *$//')
+        # SSH 포트가 포함되어 있지 않으면 자동 추가
+        if ! echo " $profile_ports " | grep -q " ${detected_ssh_port} "; then
+            profile_ports="${detected_ssh_port} ${profile_ports}"
+        fi
+        log_info "pf: CUSTOM_ALLOWED_PORTS 사용 (ports: ${profile_ports})"
+    else
+        # 폴백: 프로파일 기반 포트
+        profile_ports="${BSD_PF_PROFILES[$BSD_PF_PROFILE]:-}"
+        if [[ -z "$profile_ports" ]]; then
+            log_warn "Unknown pf profile: ${BSD_PF_PROFILE} — using base"
+            profile_ports="${BSD_PF_PROFILES[base]}"
+        fi
+        # Replace 22 with detected SSH port if non-standard
+        if [[ "$detected_ssh_port" != "22" ]]; then
+            profile_ports="${profile_ports//22/${detected_ssh_port}}"
+            log_info "pf profile SSH port replaced: 22 -> ${detected_ssh_port}"
+        fi
+        log_info "pf profile: ${BSD_PF_PROFILE} (ports: ${profile_ports})"
     fi
-    # Replace 22 with detected SSH port if non-standard
-    if [[ "$detected_ssh_port" != "22" ]]; then
-        profile_ports="${profile_ports//22/${detected_ssh_port}}"
-        log_info "pf profile SSH port replaced: 22 -> ${detected_ssh_port}"
-    fi
-    log_info "pf profile: ${BSD_PF_PROFILE} (ports: ${profile_ports})"
 
     # Build port list macro
     local port_list

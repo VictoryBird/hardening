@@ -1,7 +1,9 @@
 ---
 # ═══════════════════════════════════════════════════════════════
-# 서버 자동 탐색
+# 서버 자동 탐색 (host_vars 우선, 런타임 폴백)
 # ═══════════════════════════════════════════════════════════════
+# host_vars가 존재하면 FAM에서 수집된 값을 사용합니다.
+# host_vars가 없으면 런타임에 직접 수집합니다 (하위 호환).
 
 # --- 1. Ansible 접속 계정 감지 ---
 - name: "Detect Ansible connection user"
@@ -12,34 +14,44 @@
   debug:
     msg: "Ansible account: {{ detected_ansible_account }}"
 
-# --- 2. 리스닝 포트 수집 ---
+# --- 2. host_vars 존재 여부 확인 ---
+- name: "Check if discovered_allowed_ports is defined (from host_vars)"
+  set_fact:
+    has_host_vars: "{{ discovered_allowed_ports is defined and discovered_allowed_ports | length > 0 }}"
+
+- name: "Log host_vars status"
+  debug:
+    msg: "host_vars 사용: {{ has_host_vars }} (discovered_allowed_ports: {{ discovered_allowed_ports | default('미정의') }})"
+
+# --- 3. 런타임 포트 수집 (host_vars 없을 때만) ---
 - name: "Gather listening ports (Linux)"
   shell: ss -tlnp 2>/dev/null | awk 'NR>1 {print $4}' | grep -oE '[0-9]+$' | sort -un
   register: listening_ports_raw
   changed_when: false
   failed_when: false
-  when: ansible_system == "Linux"
+  when: ansible_system == "Linux" and not has_host_vars
 
 - name: "Gather listening ports (FreeBSD)"
   shell: sockstat -l -4 -6 2>/dev/null | awk 'NR>1 {print $6}' | grep -oE '[0-9]+$' | sort -un
   register: listening_ports_raw
   changed_when: false
   failed_when: false
-  when: ansible_system == "FreeBSD"
+  when: ansible_system == "FreeBSD" and not has_host_vars
 
 - name: "Gather listening ports (macOS)"
   shell: lsof -iTCP -sTCP:LISTEN -nP 2>/dev/null | awk 'NR>1 {print $9}' | grep -oE '[0-9]+$' | sort -un
   register: listening_ports_raw
   changed_when: false
   failed_when: false
-  when: ansible_system == "Darwin"
+  when: ansible_system == "Darwin" and not has_host_vars
 
-- name: "Set listening ports fact"
+- name: "Set listening ports fact (runtime fallback)"
   set_fact:
     discovered_ports: "{{ listening_ports_raw.stdout_lines | default([]) }}"
+  when: not has_host_vars
 
-# --- 3. 프로파일 자동 결정 ---
-- name: "Auto-detect hardening profile"
+# --- 3b. 런타임 프로파일 결정 (host_vars 없을 때만, 하위 호환) ---
+- name: "Auto-detect hardening profile (fallback)"
   set_fact:
     auto_detected_profile: >-
       {%- set ports = discovered_ports | map('int') | list -%}
@@ -55,16 +67,19 @@
       {%- if categories | length > 1 -%}full
       {%- elif categories | length == 1 -%}{{ categories[0] }}
       {%- else -%}base{%- endif -%}
+  when: not has_host_vars
 
-- name: "Determine final profile"
+- name: "Determine final profile (fallback)"
   set_fact:
     final_profile: "{{ hardening_profile | default(auto_detected_profile) | trim }}"
+  when: not has_host_vars
 
-- name: "Log detected profile"
+- name: "Log profile (fallback mode)"
   debug:
-    msg: "Profile: {{ final_profile }} (auto-detected: {{ auto_detected_profile | trim }}, override: {{ hardening_profile | default('none') }})"
+    msg: "Profile (런타임 폴백): {{ final_profile }} (auto-detected: {{ auto_detected_profile | trim }}, override: {{ hardening_profile | default('none') }})"
+  when: not has_host_vars
 
-# --- 4. 보안 에이전트 감지 ---
+# --- 4. 보안 에이전트 감지 (항상 런타임 — FAM과 본훈련 사이 변경 가능) ---
 - name: "Detect running security agents"
   shell: |
     agent_ports=""
@@ -128,7 +143,7 @@
   set_fact:
     final_ip_forward: "{{ sysctl_disable_ip_forward | default('false' if (ip_forward_check.stdout | default('0') | trim) == '1' else 'true') }}"
 
-# --- 6. SSH 키 확인 ---
+# --- 6. SSH 키 확인 (항상 런타임) ---
 - name: "Check SSH authorized_keys for Ansible user"
   stat:
     path: "{{ ansible_env.HOME }}/.ssh/authorized_keys"
@@ -146,19 +161,58 @@
     msg: "SSH PasswordAuth: {{ final_ssh_pw_auth | trim }} (key exists: {{ ansible_user_ssh_key.stat.exists | default(false) }})"
 
 # --- 7. 최종 environment 조합 ---
-- name: "Build custom allowed ports"
+
+# host_vars 모드: discovered_allowed_ports를 CUSTOM_ALLOWED_PORTS로 사용
+- name: "Build custom allowed ports (host_vars mode)"
+  set_fact:
+    final_custom_ports: "{{ ((discovered_allowed_ports | default('')) + ' ' + (extra_allowed_ports | default('')) + ' ' + detected_agent_ports) | trim }}"
+  when: has_host_vars
+
+# 폴백 모드: 기존 방식 (프로파일 기반)
+- name: "Build custom allowed ports (fallback mode)"
   set_fact:
     final_custom_ports: "{{ ((extra_allowed_ports | default('')) + ' ' + detected_agent_ports) | trim }}"
+  when: not has_host_vars
 
-- name: "Build service allowlist"
+- name: "Build service allowlist (host_vars mode)"
+  set_fact:
+    final_service_allowlist: "{{ ((discovered_service_allowlist | default('')) + ' ' + (extra_service_allowlist | default('')) + ' ' + detected_agent_services) | trim }}"
+  when: has_host_vars
+
+- name: "Build service allowlist (fallback mode)"
   set_fact:
     final_service_allowlist: "{{ ((extra_service_allowlist | default('')) + ' ' + detected_agent_services) | trim }}"
+  when: not has_host_vars
 
-- name: "Build account allowlist"
+- name: "Build account allowlist (host_vars mode)"
+  set_fact:
+    final_account_allowlist: "{{ ((discovered_account_allowlist | default('')) + ' ' + (extra_account_allowlist | default('')) + ' ' + detected_agent_accounts) | trim }}"
+  when: has_host_vars
+
+- name: "Build account allowlist (fallback mode)"
   set_fact:
     final_account_allowlist: "{{ ((extra_account_allowlist | default('')) + ' ' + detected_agent_accounts) | trim }}"
+  when: not has_host_vars
 
-- name: "Assemble hardening environment"
+# host_vars 모드: CUSTOM_ALLOWED_PORTS에 발견된 포트를 넣고, HARDENING_PROFILE은 custom으로 설정
+- name: "Assemble hardening environment (host_vars mode)"
+  set_fact:
+    hardening_environment:
+      HARDENING_PROFILE: "custom"
+      CUSTOM_ALLOWED_PORTS: "{{ final_custom_ports }}"
+      SSH_PASSWORD_AUTH: "{{ final_ssh_pw_auth | trim }}"
+      SYSCTL_DISABLE_IP_FORWARD: "{{ final_ip_forward | trim }}"
+      SERVICE_ALLOWLIST: "{{ final_service_allowlist }}"
+      ACCOUNT_ALLOWLIST: "{{ final_account_allowlist }}"
+      ANSIBLE_ACCOUNT: "{{ detected_ansible_account }}"
+      KILL_OTHER_SESSIONS: "true"
+      SSH_PERMIT_ROOT_LOGIN: "{{ ssh_permit_root_login | default('') }}"
+      DISABLE_SERVICES: "{{ disable_services | default('') }}"
+      TUNNEL_DEFENSE_ENABLED: "{{ tunnel_defense_enabled | default('') }}"
+  when: has_host_vars
+
+# 폴백 모드: 기존 방식 유지 (프로파일 기반)
+- name: "Assemble hardening environment (fallback mode)"
   set_fact:
     hardening_environment:
       HARDENING_PROFILE: "{{ final_profile | trim }}"
@@ -172,6 +226,7 @@
       SSH_PERMIT_ROOT_LOGIN: "{{ ssh_permit_root_login | default('') }}"
       DISABLE_SERVICES: "{{ disable_services | default('') }}"
       TUNNEL_DEFENSE_ENABLED: "{{ tunnel_defense_enabled | default('') }}"
+  when: not has_host_vars
 
 - name: "Log final environment"
   debug:
