@@ -57,38 +57,38 @@ ansible-playbook playbook_check.yml -i inventory.ini -e "auto_restore=true"
 ## 디렉토리 구조
 
 ```
-ansible/
 ├── playbook_discover.yml        # [1단계] 서버 상태 수집 (FAM)
 ├── playbook_harden.yml          # [2단계] 하드닝 실행
 ├── playbook_check.yml           # 점검/복원
 ├── host_vars/
 │   ├── _template.yml            # 호스트별 설정 템플릿
 │   └── <hostname>.yml           # playbook_discover.yml이 자동 생성
-├── roles/
-│   └── hardening/
-│       ├── tasks/
-│       │   ├── main.yml         # 진입점
-│       │   ├── discover.yml     # 서버 자동 탐색 (host_vars 우선)
-│       │   ├── deploy.yml       # 스크립트 배포
-│       │   └── execute.yml      # 하드닝 실행
-│       ├── defaults/
-│       │   └── main.yml         # 기본 변수
-│       └── files/
-│           └── .gitkeep         # 하드닝 스크립트 배치 위치
+├── tasks/
+│   ├── discover.yml             # 서버 자동 탐색 (host_vars 우선)
+│   ├── deploy.yml               # 스크립트 배포
+│   └── execute.yml              # 하드닝 실행
+├── group_vars/
+│   └── all.yml                  # 기본 변수 (에이전트 정의 등)
+├── hardening/                   # 하드닝 스크립트 (자동 배포됨)
+│   ├── config.sh
+│   ├── 01_baseline_hardening.sh
+│   ├── 02_check_and_restore.sh
+│   └── lib/
+│       ├── common.sh
+│       ├── safety_guards.sh
+│       ├── os_debian.sh
+│       ├── os_rhel.sh
+│       ├── os_freebsd.sh
+│       └── os_macos.sh
+├── legacy/                      # 이전 v3 스크립트
+│   ├── 01_baseline_hardening_v3.sh
+│   └── 02_check_and_restore_v3.sh
+└── docs/
 ```
 
 ## 사전 준비
 
-### 1. 하드닝 스크립트 복사
-
-배포 전에 리포지토리 루트의 스크립트를 `files/hardening/` 디렉토리로 복사해야 합니다:
-
-```bash
-mkdir -p roles/hardening/files/hardening
-cp -r ../config.sh ../01_baseline_hardening.sh ../02_check_and_restore.sh ../lib roles/hardening/files/hardening/
-```
-
-### 2. 인벤토리 파일 준비
+### 인벤토리 파일 준비
 
 대상 서버 목록이 담긴 인벤토리 파일을 준비하세요:
 

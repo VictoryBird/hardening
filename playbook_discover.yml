@@ -197,7 +197,7 @@
       copy:
         content: |
           ---
-          # ansible/host_vars/{{ inventory_hostname }}.yml
+          # host_vars/{{ inventory_hostname }}.yml
           # 자동 생성: {{ ansible_date_time.iso8601 }}
           # 서버: {{ inventory_hostname }} ({{ ansible_distribution }} {{ ansible_distribution_version }})
           #

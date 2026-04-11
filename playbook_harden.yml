@@ -17,5 +17,7 @@
   any_errors_fatal: false
   vars:
     hardening_action: harden
-  roles:
-    - hardening
+  tasks:
+    - include_tasks: tasks/discover.yml
+    - include_tasks: tasks/deploy.yml
+    - include_tasks: tasks/execute.yml

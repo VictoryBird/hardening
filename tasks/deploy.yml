@@ -2,9 +2,7 @@
 # ═══════════════════════════════════════════════════════════════
 # 하드닝 스크립트 배포
 # ═══════════════════════════════════════════════════════════════
-# NOTE: roles/hardening/files/hardening/ 디렉토리에 스크립트가 있어야 합니다.
-# 배포 전에 다음 명령으로 복사하세요:
-#   cp -r ../../{config.sh,01_baseline_hardening.sh,02_check_and_restore.sh,lib} roles/hardening/files/hardening/
+# hardening/ 디렉토리가 플레이북 루트에 있으므로 별도 복사 불필요.
 
 - name: "Create hardening directory"
   file:
@@ -26,7 +24,7 @@
 
 - name: "Deploy hardening scripts"
   copy:
-    src: hardening/
+    src: "{{ playbook_dir }}/hardening/"
     dest: "{{ hardening_deploy_path }}/"
     mode: preserve
     owner: root
