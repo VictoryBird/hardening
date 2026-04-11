@@ -1,21 +1,24 @@
 ---
 # ═══════════════════════════════════════════════════════════════
-# 서버 상태 수집 플레이북 (FAM 사전 훈련용)
+# 4001 — 하드닝 사전 수집 (Discovery)
 # ═══════════════════════════════════════════════════════════════
 # 사용법:
-#   ansible-playbook playbook_discover.yml -i <inventory>
+#   ansible-playbook playbooks/4001_hardening_discover.yml -i inventory
 #
 # 결과:
-#   host_vars/<hostname>.yml 파일이 각 서버별로 생성됩니다.
-#   생성된 파일을 검토한 후, 본훈련에서 playbook_harden.yml에 사용하세요.
+#   artifacts/hardening_discover/<hostname>.yml 파일이 각 서버별로 생성됩니다.
+#   생성된 파일을 검토한 후, 4002_hardening_apply.yml에 -e "@file" 로 전달하세요.
 # ═══════════════════════════════════════════════════════════════
-- name: "FAM Discovery — Collect Server State"
+- name: "4001 — Hardening Discovery"
   hosts: all
   become: yes
   gather_facts: yes
   any_errors_fatal: false
 
   vars:
+    # 아티팩트 출력 경로
+    artifact_dir: "{{ playbook_dir }}/../artifacts/hardening_discover"
+
     # 의심 포트 목록 (자동 필터링)
     suspicious_ports:
       - "4444"
@@ -49,28 +52,28 @@
 
   tasks:
     # ─── 1. 리스닝 포트 수집 ───
-    - name: "Gather listening ports (Linux)"
+    - name: "리스닝 포트 수집 (Linux)"
       shell: ss -tlnp 2>/dev/null | awk 'NR>1 {print $4}' | grep -oE '[0-9]+$' | sort -un
       register: listening_ports_raw
       changed_when: false
       failed_when: false
       when: ansible_system == "Linux"
 
-    - name: "Gather listening ports (FreeBSD)"
+    - name: "리스닝 포트 수집 (FreeBSD)"
       shell: sockstat -l -4 -6 2>/dev/null | awk 'NR>1 {print $6}' | grep -oE '[0-9]+$' | sort -un
       register: listening_ports_raw
       changed_when: false
       failed_when: false
       when: ansible_system == "FreeBSD"
 
-    - name: "Gather listening ports (macOS)"
+    - name: "리스닝 포트 수집 (macOS)"
       shell: lsof -iTCP -sTCP:LISTEN -nP 2>/dev/null | awk 'NR>1 {print $9}' | grep -oE '[0-9]+$' | sort -un
       register: listening_ports_raw
       changed_when: false
       failed_when: false
       when: ansible_system == "Darwin"
 
-    - name: "Filter suspicious ports and format"
+    - name: "의심 포트 필터링 및 포맷"
       set_fact:
         discovered_ports_formatted: >-
           {{ listening_ports_raw.stdout_lines
@@ -79,12 +82,12 @@
              | map('regex_replace', '^(.+)$', '\1/tcp')
              | join(' ') }}
 
-    - name: "Log discovered ports"
+    - name: "수집된 포트 로그"
       debug:
         msg: "리스닝 포트: {{ discovered_ports_formatted }}"
 
     # ─── 2. 보안 에이전트 감지 ───
-    - name: "Detect running security agents"
+    - name: "보안 에이전트 감지"
       shell: |
         agent_ports=""
         agent_services=""
@@ -111,129 +114,135 @@
       changed_when: false
       failed_when: false
 
-    - name: "Parse agent detection results"
+    - name: "에이전트 감지 결과 파싱"
       set_fact:
         discovered_agent_ports: "{{ agent_detection.stdout_lines | select('match', '^PORTS:') | map('regex_replace', '^PORTS:', '') | first | default('') | trim }}"
         discovered_agent_services: "{{ agent_detection.stdout_lines | select('match', '^SERVICES:') | map('regex_replace', '^SERVICES:', '') | first | default('') | trim }}"
         discovered_agent_accounts: "{{ agent_detection.stdout_lines | select('match', '^ACCOUNTS:') | map('regex_replace', '^ACCOUNTS:', '') | first | default('') | trim }}"
 
-    - name: "Log detected agents"
+    - name: "감지된 에이전트 로그"
       debug:
         msg: "에이전트 — 포트: [{{ discovered_agent_ports }}], 서비스: [{{ discovered_agent_services }}], 계정: [{{ discovered_agent_accounts }}]"
 
     # ─── 3. IP 포워딩 감지 ───
-    - name: "Check IP forwarding (Linux)"
+    - name: "IP 포워딩 확인 (Linux)"
       command: sysctl -n net.ipv4.ip_forward
       register: ip_forward_check
       changed_when: false
       failed_when: false
       when: ansible_system == "Linux"
 
-    - name: "Check IP forwarding (FreeBSD)"
+    - name: "IP 포워딩 확인 (FreeBSD)"
       command: sysctl -n net.inet.ip.forwarding
       register: ip_forward_check
       changed_when: false
       failed_when: false
       when: ansible_system == "FreeBSD"
 
-    - name: "Check IP forwarding (macOS)"
+    - name: "IP 포워딩 확인 (macOS)"
       command: sysctl -n net.inet.ip.forwarding
       register: ip_forward_check
       changed_when: false
       failed_when: false
       when: ansible_system == "Darwin"
 
-    - name: "Set IP forwarding fact"
+    - name: "IP 포워딩 상태 설정"
       set_fact:
         ip_forward_enabled: "{{ (ip_forward_check.stdout | default('0') | trim) == '1' }}"
 
     # ─── 4. SSH 키 존재 확인 ───
-    - name: "Check SSH authorized_keys for connected user"
+    - name: "SSH authorized_keys 확인"
       stat:
         path: "{{ ansible_env.HOME }}/.ssh/authorized_keys"
       register: user_ssh_key
 
-    - name: "Set SSH key fact"
+    - name: "SSH 키 상태 설정"
       set_fact:
         no_ssh_key: "{{ not (user_ssh_key.stat.exists | default(false)) or (user_ssh_key.stat.size | default(0)) == 0 }}"
 
     # ─── 5. 실행 중인 서비스 수집 ───
-    - name: "Collect running services (Linux)"
+    - name: "실행 서비스 수집 (Linux)"
       shell: systemctl list-units --type=service --state=active --no-legend 2>/dev/null | awk '{print $1}' | sed 's/\.service$//' | sort
       register: running_services_raw
       changed_when: false
       failed_when: false
       when: ansible_system == "Linux"
 
-    - name: "Collect running services (FreeBSD)"
+    - name: "실행 서비스 수집 (FreeBSD)"
       shell: service -e 2>/dev/null | xargs -I{} basename {} | sort
       register: running_services_raw
       changed_when: false
       failed_when: false
       when: ansible_system == "FreeBSD"
 
-    - name: "Collect running services (macOS)"
+    - name: "실행 서비스 수집 (macOS)"
       shell: launchctl list 2>/dev/null | awk 'NR>1 {print $3}' | grep -v '^-$' | sort
       register: running_services_raw
       changed_when: false
       failed_when: false
       when: ansible_system == "Darwin"
 
-    - name: "Build service list"
+    - name: "서비스 목록 조합"
       set_fact:
         discovered_running_services: "{{ running_services_raw.stdout_lines | default([]) | join(' ') }}"
 
-    # ─── 6. host_vars YAML 생성 ───
-    - name: "Ensure host_vars directory exists"
+    # ─── 6. 포트 합산 (수집 포트 + 에이전트 포트) ───
+    - name: "전체 허용 포트 조합"
+      set_fact:
+        all_allowed_ports: "{{ (discovered_ports_formatted + ' ' + discovered_agent_ports) | trim }}"
+
+    - name: "전체 서비스 허용목록 조합"
+      set_fact:
+        all_service_allowlist: "{{ (discovered_agent_services + ' ' + discovered_running_services) | trim }}"
+
+    # ─── 7. 아티팩트 YAML 생성 ───
+    - name: "아티팩트 디렉토리 생성"
       file:
-        path: "{{ playbook_dir }}/host_vars"
+        path: "{{ artifact_dir }}"
         state: directory
         mode: "0755"
       delegate_to: localhost
       become: no
       run_once: true
 
-    - name: "Generate host_vars file"
+    - name: "호스트별 아티팩트 YAML 생성"
       copy:
         content: |
           ---
-          # host_vars/{{ inventory_hostname }}.yml
-          # 자동 생성: {{ ansible_date_time.iso8601 }}
+          # 자동 수집: {{ ansible_date_time.iso8601 }}
           # 서버: {{ inventory_hostname }} ({{ ansible_distribution }} {{ ansible_distribution_version }})
+          # 이 파일의 내용을 확인한 후, 필요시 수정하여
+          # inventories/lab/host_vars/{{ inventory_hostname }}.yml 에 하드닝 변수를 추가하세요.
           #
-          # 이 파일은 FAM에서 자동 수집된 서버 상태입니다.
-          # 본훈련 전에 검토하고 필요시 수정하세요.
+          # 또는 이 파일을 그대로 4002_hardening_apply.yml 에 전달할 수 있습니다:
+          #   ansible-playbook 4002_hardening_apply.yml -i inventory -e "@artifacts/hardening_discover/{{ inventory_hostname }}.yml" --limit {{ inventory_hostname }}
 
-          # --- 방화벽 허용 포트 (현재 리스닝 중인 포트) ---
-          discovered_allowed_ports: "{{ discovered_ports_formatted }}"
+          # --- 방화벽 허용 포트 ---
+          hardening_allowed_ports: "{{ all_allowed_ports }}"
 
-          # --- 보호 서비스 (에이전트 + 실행 중인 서비스) ---
-          discovered_service_allowlist: "{{ discovered_agent_services }}"
+          # --- 보호 서비스 허용목록 ---
+          hardening_service_allowlist: "{{ discovered_agent_services }}"
 
-          # --- 보호 계정 (에이전트 계정) ---
-          discovered_account_allowlist: "{{ discovered_agent_accounts }}"
+          # --- 보호 계정 허용목록 ---
+          hardening_account_allowlist: "{{ discovered_agent_accounts }}"
 
-          # --- IP 포워딩 ---
-          sysctl_disable_ip_forward: "{{ 'false' if ip_forward_enabled else 'true' }}"
+          # --- IP 포워딩 (true=현재 활성화, false=비활성화) ---
+          hardening_ip_forward: "{{ ip_forward_enabled }}"
 
-          # --- SSH 인증 ---
-          ssh_password_auth: "{{ 'yes' if no_ssh_key else 'no' }}"
+          # --- SSH 패스워드 인증 ---
+          hardening_ssh_password_auth: "{{ 'yes' if no_ssh_key else 'no' }}"
 
-          # --- 수동 추가 포트 (필요시 주석 해제) ---
-          # extra_allowed_ports: ""
-
-          # --- 수동 추가 보호 서비스 ---
-          # extra_service_allowlist: ""
-
-          # --- 수동 추가 보호 계정 ---
-          # extra_account_allowlist: ""
-
-          # --- 터널링 방어 비활성화 (필요시) ---
-          # tunnel_defense_enabled: "false"
-        dest: "{{ playbook_dir }}/host_vars/{{ inventory_hostname }}.yml"
+          # --- 추가 설정 (필요시 주석 해제) ---
+          # hardening_extra_ports: ""
+          # hardening_extra_services: ""
+          # hardening_extra_accounts: ""
+          # hardening_ssh_permit_root_login: "no"
+          # hardening_tunnel_defense_enabled: "true"
+          # hardening_disable_services: ""
+        dest: "{{ artifact_dir }}/{{ inventory_hostname }}.yml"
       delegate_to: localhost
       become: no
 
-    - name: "Report generated file"
+    - name: "수집 완료 보고"
       debug:
-        msg: "host_vars/{{ inventory_hostname }}.yml 생성 완료 — 본훈련 전에 검토하세요."
+        msg: "artifacts/hardening_discover/{{ inventory_hostname }}.yml 생성 완료 — 적용 전 검토하세요."

@@ -1,0 +1,223 @@
+---
+# ═══════════════════════════════════════════════════════════════
+# 4003 — 하드닝 점검/복원 (Check & Restore)
+# ═══════════════════════════════════════════════════════════════
+# 사용법:
+#   # 점검만 (기본)
+#   ansible-playbook playbooks/4003_hardening_check.yml -i inventory \
+#     -e "@artifacts/hardening_discover/web01.yml" --limit web01
+#
+#   # 자동 복원
+#   ansible-playbook playbooks/4003_hardening_check.yml -i inventory \
+#     -e "@artifacts/hardening_discover/web01.yml" -e "auto_restore=true" --limit web01
+# ═══════════════════════════════════════════════════════════════
+- name: "4003 — Hardening Check & Restore"
+  hosts: all
+  become: yes
+  gather_facts: yes
+  any_errors_fatal: false
+
+  vars:
+    # 스크립트 소스 경로
+    hardening_script_src: "{{ playbook_dir }}/../files/scripts/hardening"
+
+    # 대상 서버 배포 경로
+    hardening_deploy_path: /opt/hardening
+
+    # 자동 복원 모드 (기본: 점검만)
+    auto_restore: false
+
+    # 보안 에이전트 정의
+    known_agents:
+      wazuh:
+        processes: "wazuh-agentd wazuh-modulesd ossec-agentd"
+        services: "wazuh-agent"
+        ports: "1514/tcp 1515/tcp"
+        accounts: "wazuh ossec"
+      crowdstrike:
+        processes: "falcon-sensor"
+        services: "falcon-sensor"
+        ports: ""
+        accounts: ""
+      velociraptor:
+        processes: "velociraptor_client velociraptor"
+        services: "velociraptor_client"
+        ports: "8000/tcp"
+        accounts: ""
+
+  tasks:
+    # ═══════════════════════════════════════════════════════════
+    # 1단계: 런타임 감지
+    # ═══════════════════════════════════════════════════════════
+
+    # --- Ansible 접속 계정 감지 ---
+    - name: "Ansible 접속 계정 감지"
+      set_fact:
+        detected_ansible_account: "{{ ansible_user | default(ansible_env.USER) | default('root') }}"
+
+    # --- 보안 에이전트 런타임 감지 ---
+    - name: "보안 에이전트 런타임 감지"
+      shell: |
+        agent_ports=""
+        agent_services=""
+        agent_accounts=""
+        {% for agent_name, agent in known_agents.items() %}
+        {% for proc in agent.processes.split() %}
+        if pgrep -x "{{ proc }}" >/dev/null 2>&1; then
+          {% if agent.ports %}
+          agent_ports="{{ agent.ports }} ${agent_ports}"
+          {% endif %}
+          {% if agent.services %}
+          agent_services="{{ agent.services }} ${agent_services}"
+          {% endif %}
+          {% if agent.accounts %}
+          agent_accounts="{{ agent.accounts }} ${agent_accounts}"
+          {% endif %}
+        fi
+        {% endfor %}
+        {% endfor %}
+        echo "PORTS:${agent_ports}"
+        echo "SERVICES:${agent_services}"
+        echo "ACCOUNTS:${agent_accounts}"
+      register: agent_detection
+      changed_when: false
+      failed_when: false
+
+    - name: "에이전트 감지 결과 파싱"
+      set_fact:
+        detected_agent_ports: "{{ agent_detection.stdout_lines | select('match', '^PORTS:') | map('regex_replace', '^PORTS:', '') | first | default('') | trim }}"
+        detected_agent_services: "{{ agent_detection.stdout_lines | select('match', '^SERVICES:') | map('regex_replace', '^SERVICES:', '') | first | default('') | trim }}"
+        detected_agent_accounts: "{{ agent_detection.stdout_lines | select('match', '^ACCOUNTS:') | map('regex_replace', '^ACCOUNTS:', '') | first | default('') | trim }}"
+
+    # --- IP 포워딩 감지 ---
+    - name: "IP 포워딩 확인 (Linux)"
+      command: sysctl -n net.ipv4.ip_forward
+      register: ip_forward_check
+      changed_when: false
+      failed_when: false
+      when: ansible_system == "Linux"
+
+    - name: "IP 포워딩 확인 (FreeBSD)"
+      command: sysctl -n net.inet.ip.forwarding
+      register: ip_forward_check
+      changed_when: false
+      failed_when: false
+      when: ansible_system == "FreeBSD"
+
+    - name: "IP 포워딩 확인 (macOS)"
+      command: sysctl -n net.inet.ip.forwarding
+      register: ip_forward_check
+      changed_when: false
+      failed_when: false
+      when: ansible_system == "Darwin"
+
+    - name: "IP 포워딩 설정값 결정"
+      set_fact:
+        final_ip_forward: >-
+          {%- if hardening_ip_forward is defined -%}
+            {{ 'false' if (hardening_ip_forward | string) in ['true', 'True', '1'] else 'true' }}
+          {%- else -%}
+            {{ 'false' if (ip_forward_check.stdout | default('0') | trim) == '1' else 'true' }}
+          {%- endif -%}
+
+    # --- SSH 키 확인 ---
+    - name: "SSH authorized_keys 확인"
+      stat:
+        path: "{{ ansible_env.HOME }}/.ssh/authorized_keys"
+      register: ansible_user_ssh_key
+
+    - name: "SSH 패스워드 인증 결정"
+      set_fact:
+        final_ssh_pw_auth: >-
+          {%- if hardening_ssh_password_auth is defined -%}{{ hardening_ssh_password_auth }}
+          {%- elif not (ansible_user_ssh_key.stat.exists | default(false)) or (ansible_user_ssh_key.stat.size | default(0)) == 0 -%}yes
+          {%- else -%}no{%- endif -%}
+
+    # ═══════════════════════════════════════════════════════════
+    # 2단계: environment 조합
+    # ═══════════════════════════════════════════════════════════
+
+    - name: "허용 포트 조합"
+      set_fact:
+        final_allowed_ports: "{{ ((hardening_allowed_ports | default('')) + ' ' + (hardening_extra_ports | default('')) + ' ' + detected_agent_ports) | trim }}"
+
+    - name: "서비스 허용목록 조합"
+      set_fact:
+        final_service_allowlist: "{{ ((hardening_service_allowlist | default('')) + ' ' + (hardening_extra_services | default('')) + ' ' + detected_agent_services) | trim }}"
+
+    - name: "계정 허용목록 조합"
+      set_fact:
+        final_account_allowlist: "{{ ((hardening_account_allowlist | default('')) + ' ' + (hardening_extra_accounts | default('')) + ' ' + detected_agent_accounts) | trim }}"
+
+    - name: "하드닝 environment 조립"
+      set_fact:
+        hardening_environment:
+          HARDENING_PROFILE: "custom"
+          CUSTOM_ALLOWED_PORTS: "{{ final_allowed_ports }}"
+          SSH_PASSWORD_AUTH: "{{ final_ssh_pw_auth | trim }}"
+          SYSCTL_DISABLE_IP_FORWARD: "{{ final_ip_forward | trim }}"
+          SERVICE_ALLOWLIST: "{{ final_service_allowlist }}"
+          ACCOUNT_ALLOWLIST: "{{ final_account_allowlist }}"
+          ANSIBLE_ACCOUNT: "{{ detected_ansible_account }}"
+          KILL_OTHER_SESSIONS: "true"
+          SSH_PERMIT_ROOT_LOGIN: "{{ hardening_ssh_permit_root_login | default('') }}"
+          DISABLE_SERVICES: "{{ hardening_disable_services | default('') }}"
+          TUNNEL_DEFENSE_ENABLED: "{{ hardening_tunnel_defense_enabled | default('') }}"
+
+    # ═══════════════════════════════════════════════════════════
+    # 3단계: 스크립트 배포
+    # ═══════════════════════════════════════════════════════════
+
+    - name: "하드닝 디렉토리 생성"
+      file:
+        path: "{{ hardening_deploy_path }}"
+        state: directory
+        mode: '0750'
+        owner: root
+        group: root
+      when: ansible_system != "Darwin"
+
+    - name: "하드닝 디렉토리 생성 (macOS)"
+      file:
+        path: "{{ hardening_deploy_path }}"
+        state: directory
+        mode: '0750'
+        owner: root
+        group: wheel
+      when: ansible_system == "Darwin"
+
+    - name: "하드닝 스크립트 배포"
+      copy:
+        src: "{{ hardening_script_src }}/"
+        dest: "{{ hardening_deploy_path }}/"
+        mode: preserve
+        owner: root
+
+    - name: "메인 스크립트 실행 권한 설정"
+      file:
+        path: "{{ hardening_deploy_path }}/{{ item }}"
+        mode: '0750'
+      loop:
+        - 01_baseline_hardening.sh
+        - 02_check_and_restore.sh
+
+    # ═══════════════════════════════════════════════════════════
+    # 4단계: 점검/복원 실행
+    # ═══════════════════════════════════════════════════════════
+
+    - name: "점검/복원 실행"
+      command: >-
+        bash {{ hardening_deploy_path }}/02_check_and_restore.sh
+        {{ '--auto-restore' if (auto_restore | bool) else '--check-only' }}
+      environment: "{{ hardening_environment }}"
+      register: check_result
+      failed_when: false
+
+    - name: "점검 결과 요약"
+      debug:
+        msg: "{{ check_result.stdout_lines[-5:] | default(['(출력 없음)']) }}"
+
+    - name: "점검 실패 경고"
+      debug:
+        msg: "WARNING: 점검 rc={{ check_result.rc }}. {{ inventory_hostname }} 로그를 확인하세요."
+      when: (check_result.rc | default(0)) != 0
