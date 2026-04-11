@@ -447,6 +447,15 @@ setup_ssh_hardening() {
             effective_pw_auth="yes"
         fi
     fi
+    # Protect automation account from password auth lockout
+    if [[ -n "${ANSIBLE_ACCOUNT:-}" ]] && [[ "${effective_pw_auth}" == "no" ]]; then
+        local ansible_home
+        ansible_home=$(dscl . -read "/Users/${ANSIBLE_ACCOUNT}" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+        if [[ -n "$ansible_home" ]] && [[ ! -s "${ansible_home}/.ssh/authorized_keys" ]]; then
+            log_warn "Automation account '${ANSIBLE_ACCOUNT}' has no SSH key — forcing PasswordAuthentication=yes"
+            effective_pw_auth="yes"
+        fi
+    fi
 
     # Apply SSH settings directly to sshd_config using BSD sed
     _mac_sed_set "$sshd_config" "PermitRootLogin" "${MAC_SSH_PERMIT_ROOT_LOGIN}"
@@ -478,6 +487,7 @@ setup_ssh_hardening() {
         if [[ -f "$ssh_plist" ]]; then
             launchctl unload "$ssh_plist" 2>/dev/null || true
             launchctl load "$ssh_plist" 2>/dev/null || true
+            sleep 1  # Allow sshd to complete reload before continuing
             log_ok "SSH hardening applied and service restarted"
         else
             log_warn "SSH plist not found — cannot restart sshd (changes apply on next restart)"

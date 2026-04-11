@@ -126,12 +126,14 @@ main() {
     log_info "  Failures        : ${FAIL_COUNT}"
     log_info "============================================================"
 
-    # j. Kill other SSH sessions (Linux/FreeBSD only, skip macOS)
-    if [[ "$OS_FAMILY" != "macos" ]]; then
-        if type kill_other_ssh_sessions >/dev/null 2>&1; then
+    # j. Kill other SSH sessions (skip on macOS, skip if disabled)
+    if [[ "$OS_FAMILY" != "macos" ]] && [[ "${KILL_OTHER_SESSIONS:-true}" == "true" ]]; then
+        if type -t kill_other_ssh_sessions &>/dev/null; then
             log_info "--- Terminating other SSH sessions ---"
             kill_other_ssh_sessions
         fi
+    else
+        log_info "SSH session kill skipped (KILL_OTHER_SESSIONS=${KILL_OTHER_SESSIONS:-true})"
     fi
 }
 

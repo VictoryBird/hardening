@@ -35,11 +35,31 @@ readonly GUARD_REQUIRED_TCP_PORTS="22 80 443 8080 110 995 143 993 21"
 #   Every account manipulation function in adapters must call this first.
 is_protected_account() {
     local account="${1:-}"
+    [[ -z "$account" ]] && return 1
+
+    # Hardcoded protected accounts (green team)
     case "$account" in
         "$PROTECTED_ACCOUNT_GT"|"$PROTECTED_ACCOUNT_USR")
+            log_warn "[GUARD] ${account} — protected account, skipping"
             return 0
             ;;
     esac
+
+    # Ansible/automation account
+    if [[ -n "${ANSIBLE_ACCOUNT:-}" ]] && [[ "$account" == "$ANSIBLE_ACCOUNT" ]]; then
+        log_warn "[GUARD] ${account} — automation account, skipping"
+        return 0
+    fi
+
+    # Account allowlist from config.sh
+    local _acct
+    for _acct in ${ACCOUNT_ALLOWLIST:-}; do
+        if [[ "$account" == "$_acct" ]]; then
+            log_warn "[GUARD] ${account} — allowlisted account, skipping"
+            return 0
+        fi
+    done
+
     return 1
 }
 

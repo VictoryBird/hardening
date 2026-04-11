@@ -629,6 +629,15 @@ setup_ssh_hardening() {
             effective_pw_auth="yes"
         fi
     fi
+    # Protect automation account from password auth lockout
+    if [[ -n "${ANSIBLE_ACCOUNT:-}" ]] && [[ "${effective_pw_auth}" == "no" ]]; then
+        local ansible_home
+        ansible_home=$(pw usershow "$ANSIBLE_ACCOUNT" 2>/dev/null | cut -d: -f9)
+        if [[ -n "$ansible_home" ]] && [[ ! -s "${ansible_home}/.ssh/authorized_keys" ]]; then
+            log_warn "Automation account '${ANSIBLE_ACCOUNT}' has no SSH key — forcing PasswordAuthentication=yes"
+            effective_pw_auth="yes"
+        fi
+    fi
 
     # Apply SSH settings by replacing/appending in sshd_config
     local -A ssh_settings=(
@@ -666,6 +675,7 @@ setup_ssh_hardening() {
 
     if sshd -t 2>/dev/null; then
         if service sshd reload 2>/dev/null; then
+            sleep 1  # Allow sshd to complete reload before continuing
             log_ok "SSH hardening applied and service reloaded"
         else
             log_warn "SSH service reload failed"
@@ -1695,6 +1705,7 @@ check_ssh_config() {
                 fi
                 if sshd -t 2>/dev/null; then
                     service sshd reload 2>/dev/null || true
+                    sleep 1  # Allow sshd to complete reload before continuing
                     log_restore "SSH ${key}=${baseline_val} restored"
                 else
                     log_fail "sshd config syntax error after restore — manual check required"

@@ -969,6 +969,15 @@ setup_ssh_hardening() {
             effective_pw_auth="yes"
         fi
     fi
+    # Protect automation account from password auth lockout
+    if [[ -n "${ANSIBLE_ACCOUNT:-}" ]] && [[ "${effective_pw_auth}" == "no" ]]; then
+        local ansible_home
+        ansible_home=$(getent passwd "$ANSIBLE_ACCOUNT" 2>/dev/null | cut -d: -f6)
+        if [[ -n "$ansible_home" ]] && [[ ! -s "${ansible_home}/.ssh/authorized_keys" ]]; then
+            log_warn "Automation account '${ANSIBLE_ACCOUNT}' has no SSH key — forcing PasswordAuthentication=yes"
+            effective_pw_auth="yes"
+        fi
+    fi
     tee "$hardened_conf" > /dev/null <<SSHEOF
 # === Security hardening (auto-generated: ${TIMESTAMP}) ===
 PermitRootLogin ${DEB_SSH_PERMIT_ROOT_LOGIN}
@@ -997,6 +1006,7 @@ SSHEOF
     fi
     if sshd -t 2>/dev/null; then
         if systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null; then
+            sleep 1  # Allow sshd to complete reload before continuing
             log_ok "SSH hardening applied and service reloaded"
         else
             log_warn "SSH service reload failed"
@@ -2480,6 +2490,7 @@ check_ssh_config() {
                 if cp "${hardened_conf}.tmp" "$hardened_conf" && sshd -t 2>/dev/null; then
                     rm -f "${hardened_conf}.tmp"
                     systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true
+                    sleep 1  # Allow sshd to complete reload before continuing
                     log_restore "SSH drop-in regenerated and reloaded"
                 else
                     rm -f "${hardened_conf}.tmp"
@@ -2488,6 +2499,7 @@ check_ssh_config() {
                         cp "$bk_file" "$hardened_conf" 2>/dev/null
                         if sshd -t 2>/dev/null; then
                             systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true
+                            sleep 1  # Allow sshd to complete reload before continuing
                             log_warn "SSH drop-in regeneration failed — rolled back from backup"
                         else
                             log_fail "SSH rollback also failed sshd -t — manual check required"
