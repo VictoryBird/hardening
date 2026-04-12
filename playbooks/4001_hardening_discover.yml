@@ -53,7 +53,7 @@
   tasks:
     # ─── 1. 리스닝 포트 수집 ───
     - name: "리스닝 포트 수집 (Linux)"
-      shell: ss -tlnp 2>/dev/null | awk 'NR>1 {print $4}' | grep -oE '[0-9]+$' | sort -un
+      shell: ss -tln 2>/dev/null | awk 'NR>1 {n=split($4,a,":"); print a[n]}' | sort -un
       register: listening_ports_raw
       changed_when: false
       failed_when: false
@@ -202,7 +202,7 @@
         state: directory
         mode: "0755"
       delegate_to: localhost
-      become: no
+      become: false
       run_once: true
 
     - name: "호스트별 아티팩트 YAML 생성"
@@ -241,7 +241,7 @@
           # hardening_disable_services: ""
         dest: "{{ artifact_dir }}/{{ inventory_hostname }}.yml"
       delegate_to: localhost
-      become: no
+      become: false
 
     - name: "수집 완료 보고"
       debug:
