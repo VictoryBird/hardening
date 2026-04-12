@@ -51,26 +51,18 @@
 
   tasks:
     # ─── 1. 리스닝 포트 수집 ───
-    - name: "리스닝 포트 수집 (Linux)"
-      shell: ss -tln 2>/dev/null | awk 'NR>1 {n=split($4,a,":"); print a[n]}' | sort -un
+    - name: "리스닝 포트 수집"
+      shell: |
+        {% if ansible_system == "Linux" %}
+        ss -tln 2>/dev/null | tail -n +2 | awk '{print $4}' | rev | cut -d: -f1 | rev | sort -un
+        {% elif ansible_system == "FreeBSD" %}
+        sockstat -l -4 -6 2>/dev/null | tail -n +2 | awk '{print $6}' | rev | cut -d: -f1 | rev | sort -un
+        {% elif ansible_system == "Darwin" %}
+        lsof -iTCP -sTCP:LISTEN -nP 2>/dev/null | tail -n +2 | awk '{print $9}' | rev | cut -d: -f1 | rev | sort -un
+        {% endif %}
       register: listening_ports_raw
       changed_when: false
       failed_when: false
-      when: ansible_system == "Linux"
-
-    - name: "리스닝 포트 수집 (FreeBSD)"
-      shell: sockstat -l -4 -6 2>/dev/null | awk 'NR>1 {n=split($6,a,":"); print a[n]}' | sort -un
-      register: listening_ports_raw
-      changed_when: false
-      failed_when: false
-      when: ansible_system == "FreeBSD"
-
-    - name: "리스닝 포트 수집 (macOS)"
-      shell: lsof -iTCP -sTCP:LISTEN -nP 2>/dev/null | awk 'NR>1 {n=split($9,a,":"); print a[n]}' | sort -un
-      register: listening_ports_raw
-      changed_when: false
-      failed_when: false
-      when: ansible_system == "Darwin"
 
     - name: "의심 포트 필터링 및 포맷"
       set_fact:
@@ -124,26 +116,16 @@
         msg: "에이전트 — 포트: [{{ discovered_agent_ports }}], 서비스: [{{ discovered_agent_services }}], 계정: [{{ discovered_agent_accounts }}]"
 
     # ─── 3. IP 포워딩 감지 ───
-    - name: "IP 포워딩 확인 (Linux)"
-      command: sysctl -n net.ipv4.ip_forward
+    - name: "IP 포워딩 확인"
+      shell: |
+        {% if ansible_system == "Linux" %}
+        sysctl -n net.ipv4.ip_forward
+        {% else %}
+        sysctl -n net.inet.ip.forwarding
+        {% endif %}
       register: ip_forward_check
       changed_when: false
       failed_when: false
-      when: ansible_system == "Linux"
-
-    - name: "IP 포워딩 확인 (FreeBSD)"
-      command: sysctl -n net.inet.ip.forwarding
-      register: ip_forward_check
-      changed_when: false
-      failed_when: false
-      when: ansible_system == "FreeBSD"
-
-    - name: "IP 포워딩 확인 (macOS)"
-      command: sysctl -n net.inet.ip.forwarding
-      register: ip_forward_check
-      changed_when: false
-      failed_when: false
-      when: ansible_system == "Darwin"
 
     - name: "IP 포워딩 상태 설정"
       set_fact:
@@ -160,26 +142,18 @@
         no_ssh_key: "{{ not (user_ssh_key.stat.exists | default(false)) or (user_ssh_key.stat.size | default(0)) == 0 }}"
 
     # ─── 5. 실행 중인 서비스 수집 ───
-    - name: "실행 서비스 수집 (Linux)"
-      shell: systemctl list-units --type=service --state=active --no-legend 2>/dev/null | awk '{print $1}' | sed 's/\.service$//' | sort
+    - name: "실행 서비스 수집"
+      shell: |
+        {% if ansible_system == "Linux" %}
+        systemctl list-units --type=service --state=active --no-legend 2>/dev/null | awk '{print $1}' | sed 's/\.service$//' | sort
+        {% elif ansible_system == "FreeBSD" %}
+        service -e 2>/dev/null | xargs -I{} basename {} | sort
+        {% elif ansible_system == "Darwin" %}
+        launchctl list 2>/dev/null | awk 'NR>1 {print $3}' | grep -v '^-$' | sort
+        {% endif %}
       register: running_services_raw
       changed_when: false
       failed_when: false
-      when: ansible_system == "Linux"
-
-    - name: "실행 서비스 수집 (FreeBSD)"
-      shell: service -e 2>/dev/null | xargs -I{} basename {} | sort
-      register: running_services_raw
-      changed_when: false
-      failed_when: false
-      when: ansible_system == "FreeBSD"
-
-    - name: "실행 서비스 수집 (macOS)"
-      shell: launchctl list 2>/dev/null | awk 'NR>1 {print $3}' | grep -v '^-$' | sort
-      register: running_services_raw
-      changed_when: false
-      failed_when: false
-      when: ansible_system == "Darwin"
 
     - name: "서비스 목록 조합"
       set_fact:
