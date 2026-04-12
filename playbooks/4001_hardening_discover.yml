@@ -203,6 +203,7 @@
   any_errors_fatal: false
 
   vars:
+    ansible_become: false
     artifact_dir: "{{ playbook_dir }}/../artifacts/hardening_discover"
     target_hosts: "{{ groups['all'] | difference(['localhost']) }}"
 
