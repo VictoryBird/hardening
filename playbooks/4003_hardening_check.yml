@@ -216,14 +216,30 @@
         bash {{ hardening_deploy_path }}/02_check_and_restore.sh
         {{ '--auto-restore' if (auto_restore | bool) else '--check-only' }}
       environment: "{{ hardening_environment }}"
+      register: check_async
+      failed_when: false
+      async: 600
+      poll: 0
+
+    - name: "점검 완료 대기"
+      async_status:
+        jid: "{{ check_async.ansible_job_id }}"
       register: check_result
+      until: check_result.finished
+      retries: 60
+      delay: 10
       failed_when: false
 
     - name: "점검 결과 요약"
+      shell: "tail -5 /var/log/hardening/*_check_result.log 2>/dev/null || echo '(로그 없음)'"
+      register: check_log_tail
+      changed_when: false
+
+    - name: "점검 로그"
       debug:
-        msg: "{{ check_result.stdout_lines[-5:] | default(['(출력 없음)']) }}"
+        msg: "{{ check_log_tail.stdout_lines | default(['(출력 없음)']) }}"
 
     - name: "점검 실패 경고"
       debug:
-        msg: "WARNING: 점검 rc={{ check_result.rc }}. {{ inventory_hostname }} 로그를 확인하세요."
+        msg: "WARNING: 점검 rc={{ check_result.rc | default('unknown') }}. {{ inventory_hostname }} 로그를 확인하세요."
       when: (check_result.rc | default(0)) != 0

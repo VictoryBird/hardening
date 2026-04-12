@@ -222,16 +222,32 @@
     - name: "베이스라인 하드닝 실행"
       command: bash {{ hardening_deploy_path }}/01_baseline_hardening.sh
       environment: "{{ hardening_environment }}"
+      register: hardening_async
+      failed_when: false
+      async: 600
+      poll: 0
+
+    - name: "하드닝 완료 대기"
+      async_status:
+        jid: "{{ hardening_async.ansible_job_id }}"
       register: hardening_result
+      until: hardening_result.finished
+      retries: 60
+      delay: 10
       failed_when: false
 
     - name: "하드닝 결과 요약"
+      shell: "tail -5 /var/log/hardening/*_baseline_hardening.log 2>/dev/null || echo '(로그 없음)'"
+      register: hardening_log_tail
+      changed_when: false
+
+    - name: "하드닝 로그"
       debug:
-        msg: "{{ hardening_result.stdout_lines[-5:] | default(['(출력 없음)']) }}"
+        msg: "{{ hardening_log_tail.stdout_lines | default(['(출력 없음)']) }}"
 
     - name: "하드닝 실패 경고"
       debug:
-        msg: "WARNING: 하드닝 rc={{ hardening_result.rc }}. {{ inventory_hostname }} 로그를 확인하세요."
+        msg: "WARNING: 하드닝 rc={{ hardening_result.rc | default('unknown') }}. {{ inventory_hostname }} 로그를 확인하세요."
       when: (hardening_result.rc | default(0)) != 0
 
     # ═══════════════════════════════════════════════════════════
