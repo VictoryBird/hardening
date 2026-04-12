@@ -186,17 +186,7 @@
         state: directory
         mode: '0750'
         owner: root
-        group: root
-      when: ansible_system != "Darwin"
-
-    - name: "하드닝 디렉토리 생성 (macOS)"
-      file:
-        path: "{{ hardening_deploy_path }}"
-        state: directory
-        mode: '0750'
-        owner: root
-        group: wheel
-      when: ansible_system == "Darwin"
+        group: "{{ 'wheel' if ansible_system in ['FreeBSD', 'Darwin'] else 'root' }}"
 
     - name: "하드닝 스크립트 배포"
       copy:
