@@ -149,7 +149,6 @@ declare -A DEB_UFW_PROFILES=(
 )
 
 # --- Tunnel defense settings (from config.sh) ---
-DEB_TUNNEL_DEFENSE_ENABLED="${TUNNEL_DEFENSE_ENABLED}"
 DEB_TUNNEL_ICMP_MAX_PAYLOAD="${TUNNEL_ICMP_MAX_PAYLOAD}"
 DEB_TUNNEL_REMOVE_TOOLS="${TUNNEL_REMOVE_TOOLS}"
 readonly DEB_TUNNEL_DNS_SUSPICIOUS_TOOLS=(iodine iodined dns2tcp dnscapy dnscat dnscat2 dnstunnel)

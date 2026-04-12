@@ -20,7 +20,7 @@
 _OS_RHEL_SH_LOADED=1
 
 ###############################################################################
-# Local helper — replaces old is_protected_service() from safety_guards.sh
+# Local helper — check if service is in SERVICE_ALLOWLIST
 ###############################################################################
 _is_service_protected() {
     local svc="${1:-}"
@@ -162,7 +162,6 @@ declare -A RHEL_FIREWALLD_PROFILES=(
 )
 
 # --- Tunnel defense settings (from config.sh) ---
-RHEL_TUNNEL_DEFENSE_ENABLED="${TUNNEL_DEFENSE_ENABLED}"
 RHEL_TUNNEL_ICMP_MAX_PAYLOAD="${TUNNEL_ICMP_MAX_PAYLOAD}"
 RHEL_TUNNEL_REMOVE_TOOLS="${TUNNEL_REMOVE_TOOLS}"
 readonly RHEL_TUNNEL_DNS_SUSPICIOUS_TOOLS=(iodine iodined dns2tcp dnscapy dnscat dnscat2 dnstunnel)

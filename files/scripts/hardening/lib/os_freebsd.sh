@@ -112,7 +112,6 @@ declare -A BSD_PF_PROFILES=(
 )
 
 # --- Tunnel defense settings (from config.sh) ---
-BSD_TUNNEL_DEFENSE_ENABLED="${TUNNEL_DEFENSE_ENABLED}"
 BSD_TUNNEL_ICMP_MAX_PAYLOAD="${TUNNEL_ICMP_MAX_PAYLOAD}"
 BSD_TUNNEL_REMOVE_TOOLS="${TUNNEL_REMOVE_TOOLS}"
 BSD_TUNNEL_LOCK_RESOLV="${TUNNEL_LOCK_RESOLV}"
@@ -952,6 +951,102 @@ _bsd_tunnel_remove_tools() {
     done
 }
 
+# [8] Other permission removal (o-rwx)
+setup_other_permission_removal() {
+    log_info "===== [8] Other permission removal (o-rwx) ====="
+    for f in "${BSD_FILES_O_NORW[@]}"; do
+        if [[ -e "$f" ]]; then
+            chmod o-rwx "$f"
+            log_ok "chmod o-rwx: $f"
+        else
+            log_skip "Not found: $f"
+        fi
+    done
+}
+
+# [16] Account lockout via login.conf (FreeBSD equivalent of pam_faillock)
+setup_pam_faillock() {
+    log_info "===== [16] Account lockout via login.conf ====="
+    local login_conf="/etc/login.conf"
+    if [[ ! -f "$login_conf" ]]; then
+        log_skip "login.conf not found — cannot configure account lockout"
+        return 0
+    fi
+    backup_file "$login_conf"
+
+    # Set login retries (equivalent to faillock deny)
+    if grep -q ':auth-retries=' "$login_conf" 2>/dev/null; then
+        sed -i '' 's/:auth-retries=[^:]*/:auth-retries=5:/' "$login_conf"
+        log_ok "login.conf auth-retries updated to 5"
+    else
+        # Add to default class
+        sed -i '' '/^default:\\\/a\
+\t:auth-retries=5:\\' "$login_conf" 2>/dev/null && \
+            log_ok "login.conf auth-retries=5 added" || \
+            log_warn "Failed to add auth-retries to login.conf"
+    fi
+
+    # Set login timeout (equivalent to faillock unlock_time)
+    if grep -q ':login_timeout=' "$login_conf" 2>/dev/null; then
+        sed -i '' 's/:login_timeout=[^:]*/:login_timeout=300:/' "$login_conf"
+        log_ok "login.conf login_timeout updated to 300s"
+    else
+        sed -i '' '/^default:\\\/a\
+\t:login_timeout=300:\\' "$login_conf" 2>/dev/null && \
+            log_ok "login.conf login_timeout=300 added" || \
+            log_warn "Failed to add login_timeout to login.conf"
+    fi
+
+    # Rebuild login.conf.db
+    if command -v cap_mkdb >/dev/null 2>&1; then
+        cap_mkdb "$login_conf" 2>/dev/null && \
+            log_ok "login.conf.db rebuilt (account lockout)" || \
+            log_warn "cap_mkdb failed after account lockout changes"
+    fi
+
+    log_ok "Account lockout configured via login.conf"
+}
+
+# [19] Global umask
+setup_umask() {
+    log_info "===== [19] Global umask (${BSD_DEFAULT_UMASK}) ====="
+    local umask_files=(/etc/profile /etc/login.conf)
+    for f in "${umask_files[@]}"; do
+        if [[ -f "$f" ]]; then
+            backup_file "$f"
+            if [[ "$f" == "/etc/login.conf" ]]; then
+                # login.conf uses :umask=NNN: capability format
+                if grep -q ':umask=' "$f" 2>/dev/null; then
+                    sed -i '' "s/:umask=[^:]*/:umask=${BSD_DEFAULT_UMASK}:/" "$f"
+                    log_ok "umask changed: $f -> ${BSD_DEFAULT_UMASK}"
+                else
+                    # Add umask to default class
+                    sed -i '' "/^default:\\\\$/a\\
+\\t:umask=${BSD_DEFAULT_UMASK}:\\\\" "$f" 2>/dev/null && \
+                        log_ok "umask added: $f -> ${BSD_DEFAULT_UMASK}" || \
+                        log_warn "Failed to add umask to $f"
+                fi
+            else
+                # /etc/profile uses standard shell umask command
+                if grep -qE '^\s*umask\s+[0-9]+' "$f" 2>/dev/null; then
+                    sed -i '' "s/^[[:space:]]*umask[[:space:]][[:space:]]*[0-9][0-9]*/umask ${BSD_DEFAULT_UMASK}/" "$f"
+                    log_ok "umask changed: $f -> ${BSD_DEFAULT_UMASK}"
+                else
+                    echo "umask ${BSD_DEFAULT_UMASK}" >> "$f"
+                    log_ok "umask added: $f -> ${BSD_DEFAULT_UMASK}"
+                fi
+            fi
+        fi
+    done
+
+    # Rebuild login.conf.db if login.conf was modified
+    if [[ -f /etc/login.conf ]] && command -v cap_mkdb >/dev/null 2>&1; then
+        cap_mkdb /etc/login.conf 2>/dev/null && \
+            log_ok "login.conf.db rebuilt (umask)" || \
+            log_warn "cap_mkdb failed after umask change"
+    fi
+}
+
 # [auditd] Install only — NO config or rule changes (snapshot-only in 01)
 setup_auditd() {
     log_info "===== [auditd] Ensure auditd is available (no config changes) ====="
@@ -982,6 +1077,7 @@ run_hardening() {
     [[ "${HARDEN_CRON}" == "true" ]] && setup_cron_permissions || log_skip "[TOGGLE] Cron permissions disabled"
     [[ "${HARDEN_SYSCTL}" == "true" ]] && setup_sysctl || log_skip "[TOGGLE] Sysctl disabled"
     [[ "${HARDEN_FILE_PERMISSIONS}" == "true" ]] && setup_sensitive_file_permissions || log_skip "[TOGGLE] File permissions disabled"
+    [[ "${HARDEN_OTHER_PERMS}" == "true" ]] && setup_other_permission_removal || log_skip "[TOGGLE] Other permissions disabled"
     [[ "${HARDEN_ACCOUNTS}" == "true" ]] && setup_nologin_accounts || log_skip "[TOGGLE] Account nologin disabled"
     [[ "${HARDEN_SUDOERS}" == "true" ]] && setup_sudoers || log_skip "[TOGGLE] Sudoers disabled"
     [[ "${HARDEN_SUID}" == "true" ]] && setup_suid_removal || log_skip "[TOGGLE] SUID removal disabled"
@@ -989,8 +1085,10 @@ run_hardening() {
     [[ "${HARDEN_EMPTY_PASSWORDS}" == "true" ]] && setup_lock_empty_password || log_skip "[TOGGLE] Empty password lock disabled"
     [[ "${HARDEN_SSH}" == "true" ]] && setup_ssh_hardening || log_skip "[TOGGLE] SSH disabled"
     [[ "${HARDEN_LOGIN_DEFS}" == "true" ]] && setup_login_conf || log_skip "[TOGGLE] Login conf disabled"
+    [[ "${HARDEN_FAILLOCK}" == "true" ]] && setup_pam_faillock || log_skip "[TOGGLE] Faillock disabled"
     [[ "${HARDEN_MOUNT}" == "true" ]] && setup_tmp_mount_hardening || log_skip "[TOGGLE] Mount hardening disabled"
     [[ "${HARDEN_CORE_DUMP}" == "true" ]] && setup_core_dump_limits || log_skip "[TOGGLE] Core dump disabled"
+    [[ "${HARDEN_UMASK}" == "true" ]] && setup_umask || log_skip "[TOGGLE] Umask disabled"
     [[ "${HARDEN_BANNER}" == "true" ]] && setup_banner || log_skip "[TOGGLE] Banner disabled"
     [[ "${HARDEN_TUNNEL_DEFENSE}" == "true" ]] && setup_tunnel_hardening || log_skip "[TOGGLE] Tunnel defense disabled"
     # auditd install is always run (not toggleable — orchestrator handles snapshot)
@@ -1663,7 +1761,63 @@ check_auditd() {
     fi
 }
 
-# [C11] cron permissions check
+# [C11] PAM / login.conf password policy check
+check_pam_policy() {
+    log_info "===== [C11] PAM / login.conf password policy check ====="
+
+    local login_conf="/etc/login.conf"
+    if [[ ! -f "$login_conf" ]]; then
+        log_drift "login.conf missing — password policy not enforceable"
+        return
+    fi
+
+    # Check password format (bcrypt/blowfish)
+    if grep -q ':passwd_format=blf' "$login_conf" 2>/dev/null; then
+        log_ok "login.conf: passwd_format=blf (bcrypt) present"
+    else
+        log_drift "login.conf: passwd_format not set to blf"
+    fi
+
+    # Check minimum password length
+    if grep -q ':minpasswordlen=' "$login_conf" 2>/dev/null; then
+        log_ok "login.conf: minpasswordlen setting present"
+    else
+        log_drift "login.conf: minpasswordlen not set"
+    fi
+
+    # Check account lockout (auth-retries)
+    if grep -q ':auth-retries=' "$login_conf" 2>/dev/null; then
+        log_ok "login.conf: auth-retries (account lockout) present"
+    else
+        log_drift "login.conf: auth-retries not set — no account lockout"
+    fi
+
+    # Check login timeout
+    if grep -q ':login_timeout=' "$login_conf" 2>/dev/null; then
+        log_ok "login.conf: login_timeout present"
+    else
+        log_drift "login.conf: login_timeout not set"
+    fi
+
+    # Check umask setting
+    if grep -q ':umask=' "$login_conf" 2>/dev/null; then
+        log_ok "login.conf: umask setting present"
+    else
+        log_drift "login.conf: umask not set"
+    fi
+
+    # Check PAM pam_unix.so presence
+    local pam_system="/etc/pam.d/system"
+    if [[ -f "$pam_system" ]]; then
+        if grep -q 'pam_unix.so' "$pam_system" 2>/dev/null; then
+            log_ok "PAM system module present (pam_unix.so)"
+        else
+            log_drift "PAM system module missing (pam_unix.so)"
+        fi
+    fi
+}
+
+# [C12] cron permissions check
 check_cron_permissions() {
     log_info "===== [C11] cron permissions check ====="
 
@@ -2018,6 +2172,7 @@ run_checks() {
     [[ "${HARDEN_EMPTY_PASSWORDS}" == "true" ]] && check_empty_passwords || log_skip "[TOGGLE] Empty passwords check skipped"
     check_suspicious_files     # [C9] always run
     check_auditd               # [C10] always run
+    [[ "${HARDEN_PAM}" == "true" ]] && check_pam_policy || log_skip "[TOGGLE] PAM check skipped"
     [[ "${HARDEN_CRON}" == "true" ]] && check_cron_permissions || log_skip "[TOGGLE] Cron check skipped"
     [[ "${HARDEN_SSH}" == "true" ]] && check_ssh_config || log_skip "[TOGGLE] SSH check skipped"
     check_malicious_cron       # [C13] always run (security)

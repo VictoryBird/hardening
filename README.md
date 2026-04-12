@@ -37,7 +37,6 @@ files/scripts/hardening/
     02_check_and_restore.sh
     lib/
         common.sh
-        safety_guards.sh
         os_debian.sh
         os_rhel.sh
         os_freebsd.sh
@@ -171,7 +170,7 @@ cp artifacts/hardening_discover/bps_dmz_git.yml inventories/lab/host_vars/bps_dm
 ## 주의사항
 
 - 보안 에이전트(Wazuh, CrowdStrike, Velociraptor)는 하드닝 전에 설치되어 있어야 합니다
-- `KILL_OTHER_SESSIONS=true` — 하드닝 시 공격자 SSH 세션 종료 (gt, Ansible 계정은 보호)
+- 하드닝 후 비보호 계정의 SSH 세션 자동 종료 (PROTECTED_ACCOUNTS로 보호 계정 지정)
 - `any_errors_fatal: false` — 한 서버 실패가 다른 서버에 영향을 주지 않습니다
 - 하드닝 후 SSH 연결 확인을 자동으로 수행합니다
 

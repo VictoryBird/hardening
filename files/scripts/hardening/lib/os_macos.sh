@@ -59,6 +59,7 @@ MAC_CUSTOM_ALLOWED_PORTS="${CUSTOM_ALLOWED_PORTS}"
 # --- Allowlists (from config.sh) ---
 MAC_WHITELISTED_PORTS="${WHITELISTED_PORTS}"
 MAC_ACCOUNT_ALLOWLIST="${ACCOUNT_ALLOWLIST}"
+MAC_CRONTAB_ALLOWLIST="${CRONTAB_ALLOWLIST}"
 
 # --- Restore backup directory (for 02 script) ---
 MAC_RESTORE_BACKUP_DIR=""
@@ -1500,6 +1501,96 @@ check_auditd() {
     fi
 }
 
+# [C12] UID 0 backdoor accounts check
+check_uid0_accounts() {
+    log_info "===== [C12] UID 0 backdoor accounts check ====="
+
+    # Use dscl to list all users and their UIDs (macOS Directory Services)
+    local uid0_users
+    uid0_users="$(dscl . -list /Users UniqueID 2>/dev/null | awk '$2 == "0" {print $1}')" || true
+    local uid0_count=0
+
+    if [[ -n "$uid0_users" ]]; then
+        while IFS= read -r user; do
+            [[ -z "$user" ]] && continue
+            uid0_count=$((uid0_count + 1))
+            if [[ "$user" != "root" ]]; then
+                log_drift "Non-root UID 0 account: ${user} (possible backdoor!)"
+                if [[ "$MODE" == "auto-restore" ]]; then
+                    # Lock the account via dscl by setting AuthenticationAuthority to disabled
+                    if dscl . -create "/Users/${user}" AuthenticationAuthority ";DisabledUser;" 2>/dev/null; then
+                        log_restore "Locked UID 0 account: ${user}"
+                    else
+                        log_fail "Failed to lock UID 0 account: ${user}"
+                    fi
+                fi
+            fi
+        done <<< "$uid0_users"
+    fi
+
+    if [[ "$uid0_count" -le 1 ]]; then
+        log_ok "UID 0 accounts: root only"
+    fi
+}
+
+# [C13] Malicious cron/at detection
+check_malicious_cron() {
+    log_info "===== [C13] Malicious cron/at detection ====="
+
+    # macOS crontab directories (varies by version)
+    local crontab_dir=""
+    if [[ -d "/var/at/tabs" ]]; then
+        crontab_dir="/var/at/tabs"
+    elif [[ -d "/usr/lib/cron/tabs" ]]; then
+        crontab_dir="/usr/lib/cron/tabs"
+    fi
+
+    if [[ -n "$crontab_dir" ]] && [[ -d "$crontab_dir" ]]; then
+        for ct in "$crontab_dir"/*; do
+            [[ -f "$ct" ]] || continue
+            local user
+            user="$(basename "$ct")"
+            if [[ "$user" != "root" ]]; then
+                if echo ",${MAC_CRONTAB_ALLOWLIST}," | grep -q ",${user},"; then
+                    log_skip "crontab allowlist account: ${user}"
+                else
+                    log_drift "Non-root user crontab: ${user}"
+                    log_info "  Content: $(head -5 "$ct" 2>/dev/null)"
+                fi
+            fi
+            if grep -qiE '(nc[[:space:]]+-[elp]|ncat|bash[[:space:]]+-i|/dev/tcp|python.*socket|wget.*\|.*sh|curl.*\|.*sh|mkfifo|reverse|shell)' "$ct" 2>/dev/null; then
+                log_drift "Suspicious crontab command (${user}): $(grep -iE '(nc |ncat|bash -i|/dev/tcp|python.*socket|wget.*sh|curl.*sh|mkfifo|reverse|shell)' "$ct" 2>/dev/null | head -3)"
+            fi
+        done
+    fi
+
+    # Check /etc/cron.d if present (some macOS setups have it)
+    if [[ -d /etc/cron.d ]]; then
+        for f in /etc/cron.d/*; do
+            [[ -f "$f" ]] || continue
+            if grep -qiE '(nc[[:space:]]+-[elp]|ncat|bash[[:space:]]+-i|/dev/tcp|python.*socket|wget.*\|.*sh|curl.*\|.*sh|mkfifo)' "$f" 2>/dev/null; then
+                log_drift "/etc/cron.d suspicious file: $f"
+            fi
+        done
+    fi
+
+    # Check for pending at jobs
+    if command -v atq >/dev/null 2>&1; then
+        local at_count
+        at_count="$(atq 2>/dev/null | wc -l | tr -d ' ')"
+        if [[ "$at_count" -gt 0 ]]; then
+            log_drift "Pending at jobs: ${at_count}"
+            atq 2>/dev/null | while IFS= read -r line; do
+                log_info "  at: $line"
+            done
+        else
+            log_ok "No pending at jobs"
+        fi
+    fi
+
+    log_ok "cron/at check complete"
+}
+
 ###############################################################################
 # run_checks() — Called by 02 orchestrator
 ###############################################################################
@@ -1518,6 +1609,8 @@ run_checks() {
     [[ "${HARDEN_FILE_PERMISSIONS}" == "true" ]] && check_file_permissions || log_skip "[TOGGLE] File permissions check skipped"
     [[ "${HARDEN_SYSCTL}" == "true" ]] && check_sysctl || log_skip "[TOGGLE] Sysctl check skipped"
     check_auditd                # [C11] always run
+    check_uid0_accounts         # [C12] always run (security)
+    check_malicious_cron        # [C13] always run (security)
 
     log_ok "===== macOS drift checks complete ====="
 }

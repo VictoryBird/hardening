@@ -141,7 +141,6 @@ HARDEN_UMASK="${HARDEN_UMASK:-true}"
 HARDEN_BANNER="${HARDEN_BANNER:-true}"
 
 # 터널링 방어 (ICMP/DNS/SOCKS5 차단, 도구 제거)
-# 참고: 기존 TUNNEL_DEFENSE_ENABLED와 동일 기능. 둘 다 false면 비활성화.
 HARDEN_TUNNEL_DEFENSE="${HARDEN_TUNNEL_DEFENSE:-true}"
 
 # 패스워드 에이징 정책 (login.defs)
@@ -269,9 +268,6 @@ FAILLOCK_DENY_ROOT="${FAILLOCK_DENY_ROOT:-false}"
 # ═══════════════════════════════════════════════════════════════════════════
 # 터널링 방어
 # ═══════════════════════════════════════════════════════════════════════════
-
-# 터널링 방어 전체 활성화/비활성화
-TUNNEL_DEFENSE_ENABLED="${TUNNEL_DEFENSE_ENABLED:-true}"
 
 # ICMP 최대 payload 크기 (바이트). 이 크기 초과 ICMP 패킷 차단
 TUNNEL_ICMP_MAX_PAYLOAD="${TUNNEL_ICMP_MAX_PAYLOAD:-128}"

@@ -8,11 +8,7 @@ set -euo pipefail
 # appropriate adapter, and delegates all real work to adapter functions.
 #
 # Usage:
-#   sudo ./01_baseline_hardening.sh [--check] [--profile=<name>]
-#
-# Options:
-#   --check          Run tunnel status check only (adapter check_tunnel_status)
-#   --profile=X      Set UFW_PROFILE env var (default: "base")
+#   sudo ./01_baseline_hardening.sh
 #
 # Compatibility: bash 3.2+ (macOS), bash 4.0+ (Linux/FreeBSD)
 ###############################################################################
@@ -43,39 +39,7 @@ source "${SELF_DIR}/config.sh"
 load_os_adapter
 
 # ---------------------------------------------------------------------------
-# 4. Parse command-line arguments
-# ---------------------------------------------------------------------------
-CHECK_ONLY=0
-UFW_PROFILE="${UFW_PROFILE:-base}"
-export UFW_PROFILE
-
-for arg in "$@"; do
-    case "$arg" in
-        --check)
-            CHECK_ONLY=1
-            ;;
-        --profile=*)
-            UFW_PROFILE="${arg#--profile=}"
-            export UFW_PROFILE
-            ;;
-        *)
-            log_warn "Unknown argument: $arg"
-            ;;
-    esac
-done
-
-# If --check mode, run tunnel status check and exit
-if [[ "$CHECK_ONLY" -eq 1 ]]; then
-    if type check_tunnel_status >/dev/null 2>&1; then
-        check_tunnel_status
-    else
-        log_warn "check_tunnel_status not implemented for OS_FAMILY=${OS_FAMILY}"
-    fi
-    exit 0
-fi
-
-# ---------------------------------------------------------------------------
-# 5. auditd snapshot function (inline — no safety_guards.sh dependency)
+# 4. auditd snapshot function
 # ---------------------------------------------------------------------------
 snapshot_auditd() {
     log_info "Snapshotting auditd configuration (read-only)"
@@ -135,7 +99,6 @@ main() {
     log_info "  Baseline Hardening v${HARDENING_VERSION} — START"
     log_info "  Hostname : ${HOSTNAME_ORIG}"
     log_info "  OS       : ${OS_FAMILY} / ${OS_ID} ${OS_VERSION}"
-    log_info "  Profile  : ${UFW_PROFILE}"
     log_info "  Timestamp: ${TIMESTAMP}"
     log_info "  Protected: ${PROTECTED_ACCOUNTS:-none}"
     log_info "============================================================"
