@@ -9,16 +9,15 @@
 #   artifacts/hardening_discover/<hostname>.yml 파일이 각 서버별로 생성됩니다.
 #   생성된 파일을 검토한 후, 4002_hardening_apply.yml에 -e "@file" 로 전달하세요.
 # ═══════════════════════════════════════════════════════════════
-- name: "4001 — Hardening Discovery"
+
+# ─── Play 1: 원격 서버 정보 수집 ───
+- name: "4001 — Hardening Discovery (수집)"
   hosts: all
   become: yes
   gather_facts: yes
   any_errors_fatal: false
 
   vars:
-    # 아티팩트 출력 경로
-    artifact_dir: "{{ playbook_dir }}/../artifacts/hardening_discover"
-
     # 의심 포트 목록 (자동 필터링)
     suspicious_ports:
       - "4444"
@@ -60,14 +59,14 @@
       when: ansible_system == "Linux"
 
     - name: "리스닝 포트 수집 (FreeBSD)"
-      shell: sockstat -l -4 -6 2>/dev/null | awk 'NR>1 {print $6}' | grep -oE '[0-9]+$' | sort -un
+      shell: sockstat -l -4 -6 2>/dev/null | awk 'NR>1 {n=split($6,a,":"); print a[n]}' | sort -un
       register: listening_ports_raw
       changed_when: false
       failed_when: false
       when: ansible_system == "FreeBSD"
 
     - name: "리스닝 포트 수집 (macOS)"
-      shell: lsof -iTCP -sTCP:LISTEN -nP 2>/dev/null | awk 'NR>1 {print $9}' | grep -oE '[0-9]+$' | sort -un
+      shell: lsof -iTCP -sTCP:LISTEN -nP 2>/dev/null | awk 'NR>1 {n=split($9,a,":"); print a[n]}' | sort -un
       register: listening_ports_raw
       changed_when: false
       failed_when: false
@@ -195,14 +194,22 @@
       set_fact:
         all_service_allowlist: "{{ (discovered_agent_services + ' ' + discovered_running_services) | trim }}"
 
-    # ─── 7. 아티팩트 YAML 생성 ───
+# ─── Play 2: 로컬 아티팩트 생성 (sudo 불필요) ───
+- name: "4001 — Hardening Discovery (아티팩트 생성)"
+  hosts: all
+  gather_facts: no
+  any_errors_fatal: false
+
+  vars:
+    artifact_dir: "{{ playbook_dir }}/../artifacts/hardening_discover"
+
+  tasks:
     - name: "아티팩트 디렉토리 생성"
       file:
         path: "{{ artifact_dir }}"
         state: directory
         mode: "0755"
       delegate_to: localhost
-      become: false
       run_once: true
 
     - name: "호스트별 아티팩트 YAML 생성"
@@ -241,7 +248,6 @@
           # hardening_disable_services: ""
         dest: "{{ artifact_dir }}/{{ inventory_hostname }}.yml"
       delegate_to: localhost
-      become: false
 
     - name: "수집 완료 보고"
       debug:
