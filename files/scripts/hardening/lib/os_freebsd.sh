@@ -1138,7 +1138,7 @@ create_baseline_snapshot() {
       auditctl -l 2>/dev/null || true
     } > "${BASELINE_SNAPSHOT_DIR}/auditd_baseline.txt" || true
 
-    { sysctl -a 2>/dev/null | sed 's/: /=/' | grep -v '^#' | sort
+    { sysctl -a 2>/dev/null | grep '^[a-z]' | grep ': ' | sed 's/: /=/' | sort
     } > "${BASELINE_SNAPSHOT_DIR}/sysctl_baseline.conf" || true
 
     { local _perm_targets=(
@@ -1248,6 +1248,10 @@ check_sysctl() {
         key="${line%%=*}"
         expected_val="${line#*=}"
         [[ -z "$key" ]] && continue
+
+        # Skip non-sysctl lines (XML, multiline values, etc.)
+        echo "$key" | grep -q '^[a-z]' || continue
+        echo "$key" | grep -q '\.' || continue
 
         if echo "$key" | grep -qE "$BSD_SYSCTL_SKIP_PATTERN"; then
             continue
