@@ -169,7 +169,7 @@
           SERVICE_ALLOWLIST: "{{ final_service_allowlist }}"
           ACCOUNT_ALLOWLIST: "{{ final_account_allowlist }}"
           PROTECTED_ACCOUNTS: "gt {{ detected_ansible_account }}"
-          KILL_OTHER_SESSIONS: "true"
+          KILL_OTHER_SESSIONS: "false"
           SSH_PERMIT_ROOT_LOGIN: "{{ hardening_ssh_permit_root_login | default('') }}"
           DISABLE_SERVICES: "{{ hardening_disable_services | default('') }}"
           TUNNEL_DEFENSE_ENABLED: "{{ hardening_tunnel_defense_enabled | default('') }}"
@@ -263,3 +263,33 @@
     - name: "연결 확인 완료"
       debug:
         msg: "SSH 연결 확인 완료: {{ inventory_hostname }}"
+
+    # ═══════════════════════════════════════════════════════════
+    # 6단계: 비보호 계정 SSH 세션 종료
+    # ═══════════════════════════════════════════════════════════
+    - name: "비보호 계정 SSH 세션 종료"
+      shell: |
+        protected="{{ hardening_environment.PROTECTED_ACCOUNTS | default('') }}"
+        killed=0
+        # Get all sshd child processes (user sessions), skip master sshd
+        for pid in $(pgrep -f 'sshd:.*@' 2>/dev/null); do
+          user=$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' ')
+          [ -z "$user" ] && continue
+          # Check if user is protected
+          skip=0
+          for pa in $protected; do
+            [ "$user" = "$pa" ] && skip=1 && break
+          done
+          if [ "$skip" -eq 0 ]; then
+            kill "$pid" 2>/dev/null && killed=$((killed + 1)) && echo "Killed: $user (PID $pid)"
+          fi
+        done
+        echo "Total killed: $killed"
+      register: kill_sessions_result
+      changed_when: "'Killed:' in kill_sessions_result.stdout"
+      failed_when: false
+
+    - name: "세션 종료 결과"
+      debug:
+        msg: "{{ kill_sessions_result.stdout_lines | default(['없음']) }}"
+      when: kill_sessions_result.stdout | default('') | length > 0
