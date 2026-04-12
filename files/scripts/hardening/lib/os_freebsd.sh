@@ -1138,7 +1138,9 @@ create_baseline_snapshot() {
       auditctl -l 2>/dev/null || true
     } > "${BASELINE_SNAPSHOT_DIR}/auditd_baseline.txt" || true
 
-    { sysctl -a 2>/dev/null | grep '^[a-z]' | grep ': ' | sed 's/: /=/' | sort
+    { for _sk in "${!BSD_SYSCTL_SETTINGS[@]}"; do
+          _sv=$(sysctl -n "$_sk" 2>/dev/null) && echo "${_sk}=${_sv}"
+      done | sort
     } > "${BASELINE_SNAPSHOT_DIR}/sysctl_baseline.conf" || true
 
     { local _perm_targets=(
