@@ -372,10 +372,6 @@ pass in  inet6 proto icmp6 icmp6-type { echoreq, echorep, unreach, toobig, timex
 # Anti-spoofing
 antispoof quick for \$ext_if
 
-# Tunnel defense: block large ICMP packets (>128 byte payload)
-block in  log quick on \$ext_if proto icmp from any to any max-pkt-size $((20 + 8 + BSD_TUNNEL_ICMP_MAX_PAYLOAD))
-block out log quick on \$ext_if proto icmp from any to any max-pkt-size $((20 + 8 + BSD_TUNNEL_ICMP_MAX_PAYLOAD))
-
 # Tunnel defense: block outbound DNS over TCP (tunnels use sustained TCP 53)
 block out log quick on \$ext_if proto tcp from any to any port 53
 PF_CONF_EOF
@@ -2119,12 +2115,6 @@ check_tunnel_defense() {
     log_info "  [17-a] pf tunnel defense rules"
     local pf_rules
     pf_rules=$(pfctl -s rules 2>/dev/null || true)
-
-    if echo "$pf_rules" | grep -q "max-pkt-size" 2>/dev/null; then
-        log_ok "  ICMP large packet block rule present in pf"
-    else
-        log_drift "  ICMP large packet block rule missing from pf"
-    fi
 
     if echo "$pf_rules" | grep -q "block.*proto tcp.*port 53" 2>/dev/null; then
         log_ok "  DNS over TCP outbound block present in pf"
