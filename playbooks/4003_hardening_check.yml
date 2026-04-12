@@ -46,6 +46,12 @@
         accounts: ""
 
   tasks:
+    # --- 0단계: discover 아티팩트 자동 로드 ---
+    - name: "Discover 아티팩트 로드 (있으면)"
+      include_vars:
+        file: "{{ playbook_dir }}/../artifacts/hardening_discover/{{ inventory_hostname }}.yml"
+      ignore_errors: true
+
     # ═══════════════════════════════════════════════════════════
     # 1단계: 런타임 감지
     # ═══════════════════════════════════════════════════════════
