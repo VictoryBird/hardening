@@ -198,6 +198,7 @@
 - name: "4001 — Hardening Discovery (아티팩트 생성)"
   hosts: localhost
   connection: local
+  become: false
   gather_facts: no
   any_errors_fatal: false
 
