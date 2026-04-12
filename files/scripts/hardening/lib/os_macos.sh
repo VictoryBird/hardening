@@ -10,7 +10,7 @@
 #           config.sh (PROTECTED_ACCOUNTS, SERVICE_ALLOWLIST)
 #
 # Exports: run_hardening(), run_checks(), create_baseline_snapshot(),
-#          kill_other_ssh_sessions(), check_auditd()
+#          check_auditd()
 #
 # Compatibility: bash 3.2+ (macOS ships with bash 3.2)
 #   - NO associative arrays (bash 4+ only)
@@ -1522,81 +1522,3 @@ run_checks() {
     log_ok "===== macOS drift checks complete ====="
 }
 
-###############################################################################
-# kill_other_ssh_sessions() — Minimal/no-op on macOS
-###############################################################################
-
-kill_other_ssh_sessions() {
-    log_info "===== Kill other SSH sessions (macOS — minimal) ====="
-
-    # On macOS, SSH session management is simpler.
-    # We attempt to identify and kill other sshd child processes,
-    # but this is best-effort.
-
-    local my_sshd_pids=""
-    local check_pid=$$
-    local depth=0
-    while [[ $depth -lt 10 ]] && [[ $check_pid -gt 1 ]]; do
-        local pname pppid
-        pname="$(ps -o comm= -p "$check_pid" 2>/dev/null | tr -d ' ')" || true
-        pppid="$(ps -o ppid= -p "$check_pid" 2>/dev/null | tr -d ' ')" || true
-
-        if [[ "$pname" == "sshd" ]]; then
-            if [[ "$pppid" != "1" ]] && [[ "$pppid" != "0" ]]; then
-                my_sshd_pids="${my_sshd_pids} ${check_pid}"
-            fi
-        fi
-        check_pid="$pppid"
-        depth=$((depth + 1))
-    done
-
-    if [[ -z "$my_sshd_pids" ]]; then
-        log_skip "Cannot find current session sshd process — skipping session kill"
-        return 0
-    fi
-    log_info "  Current session sshd PID(s):${my_sshd_pids}"
-
-    local killed_count=0
-    local pid
-    # Find all sshd processes that are not the main daemon and not ours
-    while IFS= read -r pid; do
-        [[ -z "$pid" ]] && continue
-        pid="$(echo "$pid" | tr -d ' ')"
-
-        # Skip if this is our session
-        local is_ours=false
-        local my_pid
-        for my_pid in $my_sshd_pids; do
-            if [[ "$pid" == "$my_pid" ]]; then
-                is_ours=true
-                break
-            fi
-        done
-        [[ "$is_ours" == "true" ]] && continue
-
-        # Check parent — skip the main sshd daemon (ppid=1)
-        local ppid_of
-        ppid_of="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')" || true
-        [[ "$ppid_of" == "1" || "$ppid_of" == "0" ]] && continue
-
-        local user
-        user=$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' ')
-
-        # Protect all accounts in PROTECTED_ACCOUNTS and ACCOUNT_ALLOWLIST
-        if is_protected_account "$user"; then
-            log_skip "  Skipping protected account session: PID ${pid} (${user})"
-            continue
-        fi
-
-        kill "$pid" 2>/dev/null && {
-            log_info "  Killed sshd session PID=$pid"
-            killed_count=$((killed_count + 1))
-        }
-    done <<< "$(pgrep -x sshd 2>/dev/null)"
-
-    if [[ "$killed_count" -gt 0 ]]; then
-        log_ok "Killed $killed_count other SSH session(s)"
-    else
-        log_ok "No other SSH sessions found to kill"
-    fi
-}

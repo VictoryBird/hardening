@@ -9,8 +9,7 @@
 #           PROTECTED_ACCOUNTS, SERVICE_ALLOWLIST from config.sh
 #           is_protected_account() from common.sh
 #
-# Exports: run_hardening(), run_checks(), create_baseline_snapshot(),
-#          kill_other_ssh_sessions()
+# Exports: run_hardening(), run_checks(), create_baseline_snapshot()
 #
 # Compatibility: bash 4.0+ (Debian/Ubuntu always have bash 4+)
 
@@ -3159,74 +3158,3 @@ run_checks() {
     log_ok "===== Debian/Ubuntu drift checks complete ====="
 }
 
-###############################################################################
-# kill_other_ssh_sessions() — Called by 01 at end
-###############################################################################
-kill_other_ssh_sessions() {
-    log_info "===== Kill other SSH sessions ====="
-    local killed_count=0
-
-    local my_sshd_pids=()
-    local check_pid=$$
-    local depth=0
-    while [[ $depth -lt 10 && $check_pid -gt 1 ]]; do
-        local pname pppid
-        pname=$(ps -o comm= -p "$check_pid" 2>/dev/null | tr -d ' ')
-        pppid=$(ps -o ppid= -p "$check_pid" 2>/dev/null | tr -d ' ')
-        if [[ "$pname" == "sshd" ]]; then
-            if [[ "$pppid" != "1" && "$pppid" != "0" ]]; then
-                my_sshd_pids+=("$check_pid")
-            fi
-        fi
-        check_pid="$pppid"
-        depth=$((depth + 1))
-    done
-
-    if [[ ${#my_sshd_pids[@]} -eq 0 ]]; then
-        log_skip "Cannot find current session sshd process — skipping session kill"
-        return 0
-    fi
-    log_info "  Current session sshd PID: ${my_sshd_pids[*]}"
-
-    while IFS= read -r pid; do
-        [[ -z "$pid" ]] && continue
-
-        local is_mine=false
-        for my_pid in "${my_sshd_pids[@]}"; do
-            if [[ "$pid" == "$my_pid" ]]; then
-                is_mine=true
-                break
-            fi
-        done
-        [[ "$is_mine" == true ]] && continue
-
-        local ppid
-        ppid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
-        if [[ "$ppid" == "1" ]] || [[ "$ppid" == "0" ]]; then
-            log_info "  Skipping master sshd: PID ${pid}"
-            continue
-        fi
-
-        local user
-        user=$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' ')
-
-        # Protect sessions belonging to protected accounts
-        if is_protected_account "$user"; then
-            log_skip "  Skipping protected account session: PID ${pid} (${user})"
-            continue
-        fi
-
-        if kill -HUP "$pid" 2>/dev/null; then
-            log_ok "  SSH session killed: PID ${pid} (user: ${user:-unknown})"
-            killed_count=$((killed_count + 1))
-        else
-            log_warn "  SSH session kill failed: PID ${pid}"
-        fi
-    done < <(pgrep -x sshd 2>/dev/null || true)
-
-    if [[ $killed_count -eq 0 ]]; then
-        log_skip "No other SSH sessions to kill"
-    else
-        log_ok "Total ${killed_count} SSH sessions killed"
-    fi
-}

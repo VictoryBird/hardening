@@ -165,7 +165,6 @@
           SERVICE_ALLOWLIST: "{{ final_service_allowlist }}"
           ACCOUNT_ALLOWLIST: "{{ final_account_allowlist }}"
           PROTECTED_ACCOUNTS: "gt {{ detected_ansible_account }}"
-          KILL_OTHER_SESSIONS: "false"
           SSH_PERMIT_ROOT_LOGIN: "{{ hardening_ssh_permit_root_login | default('') }}"
           DISABLE_SERVICES: "{{ hardening_disable_services | default('') }}"
           TUNNEL_DEFENSE_ENABLED: "{{ hardening_tunnel_defense_enabled | default('') }}"

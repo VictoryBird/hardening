@@ -80,11 +80,6 @@ OUTBOUND_ALLOW_ICMP="${OUTBOUND_ALLOW_ICMP:-true}"
 # Ansible 플레이북에서 자동으로 접속 계정을 추가합니다.
 PROTECTED_ACCOUNTS="${PROTECTED_ACCOUNTS:-gt}"
 
-# 하드닝 완료 후 다른 SSH 세션 종료 여부
-# Ansible로 실행할 때는 반드시 "false"로 설정하세요!
-# Ansible의 SSH 연결이 끊어질 수 있습니다.
-KILL_OTHER_SESSIONS="${KILL_OTHER_SESSIONS:-true}"
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 하드닝 항목 선택 (true=실행, false=건너뜀)

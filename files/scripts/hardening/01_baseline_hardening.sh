@@ -162,16 +162,6 @@ main() {
     log_info "  Baseline Hardening v${HARDENING_VERSION} — COMPLETE"
     log_info "  Failures        : ${FAIL_COUNT}"
     log_info "============================================================"
-
-    # h. Kill other SSH sessions (skip on macOS, skip if disabled)
-    if [[ "$OS_FAMILY" != "macos" ]] && [[ "${KILL_OTHER_SESSIONS:-true}" == "true" ]]; then
-        if type -t kill_other_ssh_sessions &>/dev/null; then
-            log_info "--- Terminating other SSH sessions ---"
-            kill_other_ssh_sessions
-        fi
-    else
-        log_info "SSH session kill skipped (KILL_OTHER_SESSIONS=${KILL_OTHER_SESSIONS:-true})"
-    fi
 }
 
 # ---------------------------------------------------------------------------
