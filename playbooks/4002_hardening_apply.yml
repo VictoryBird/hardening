@@ -237,9 +237,10 @@
       failed_when: false
 
     - name: "하드닝 결과 요약"
-      shell: "tail -5 /var/log/hardening/*_baseline_hardening.log 2>/dev/null || echo '(로그 없음)'"
+      shell: "ls -t /var/log/hardening/*_baseline_hardening.log 2>/dev/null | head -1 | xargs tail -10 2>/dev/null || echo '(로그 없음)'"
       register: hardening_log_tail
       changed_when: false
+      become: true
 
     - name: "하드닝 로그"
       debug:
