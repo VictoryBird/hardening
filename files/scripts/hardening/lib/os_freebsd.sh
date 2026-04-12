@@ -415,6 +415,10 @@ PFEOF
     sysrc pf_enable="YES" 2>/dev/null || true
     sysrc pflog_enable="YES" 2>/dev/null || true
 
+    # Load kernel modules if not loaded
+    kldstat -q -m pf || kldload pf 2>/dev/null || true
+    kldstat -q -m pflog || kldload pflog 2>/dev/null || true
+
     if pfctl -nf "$pf_conf" 2>/dev/null; then
         pfctl -f "$pf_conf" 2>/dev/null || log_warn "pf rules load failed"
         if ! pfctl -s info 2>/dev/null | grep -q "Status: Enabled"; then
@@ -970,39 +974,23 @@ setup_pam_faillock() {
     fi
     backup_file "$login_conf"
 
-    # Set login retries (equivalent to faillock deny)
-    if grep -q ':auth-retries=' "$login_conf" 2>/dev/null; then
-        sed -i '' 's/:auth-retries=[^:]*/:auth-retries=5:/' "$login_conf"
-        log_ok "login.conf auth-retries updated to 5"
-    else
-        # Add to default class
-        sed -i '' '/^default:\\\/a\
-\t:auth-retries=5:\\' "$login_conf" 2>/dev/null && \
-            log_ok "login.conf auth-retries=5 added" || \
-            log_warn "Failed to add auth-retries to login.conf"
-    fi
+    # Helper: insert a capability into the default class after passwd_format line
+    _bsd_login_conf_set() {
+        local key="$1" val="$2"
+        if grep -q ":${key}=" "$login_conf" 2>/dev/null; then
+            sed -i '' "s/:${key}=[^:]*/:${key}=${val}:/" "$login_conf"
+            log_ok "login.conf ${key} updated to ${val}"
+        else
+            sed -i '' "/passwd_format/a\\
+	:${key}=${val}:\\\\" "$login_conf" 2>/dev/null && \
+                log_ok "login.conf ${key}=${val} added" || \
+                log_warn "Failed to add ${key} to login.conf"
+        fi
+    }
 
-    # Set login timeout (equivalent to faillock unlock_time)
-    if grep -q ':login_timeout=' "$login_conf" 2>/dev/null; then
-        sed -i '' 's/:login_timeout=[^:]*/:login_timeout=300:/' "$login_conf"
-        log_ok "login.conf login_timeout updated to 300s"
-    else
-        sed -i '' '/^default:\\\/a\
-\t:login_timeout=300:\\' "$login_conf" 2>/dev/null && \
-            log_ok "login.conf login_timeout=300 added" || \
-            log_warn "Failed to add login_timeout to login.conf"
-    fi
-
-    # Set minimum password length
-    if grep -q ':minpasswordlen=' "$login_conf" 2>/dev/null; then
-        sed -i '' 's/:minpasswordlen=[^:]*/:minpasswordlen=8:/' "$login_conf"
-        log_ok "login.conf minpasswordlen updated to 8"
-    else
-        sed -i '' '/^default:\\\/a\
-\t:minpasswordlen=8:\\' "$login_conf" 2>/dev/null && \
-            log_ok "login.conf minpasswordlen=8 added" || \
-            log_warn "Failed to add minpasswordlen to login.conf"
-    fi
+    _bsd_login_conf_set "auth-retries" "5"
+    _bsd_login_conf_set "login_timeout" "300"
+    _bsd_login_conf_set "minpasswordlen" "8"
 
     # Rebuild login.conf.db
     if command -v cap_mkdb >/dev/null 2>&1; then
