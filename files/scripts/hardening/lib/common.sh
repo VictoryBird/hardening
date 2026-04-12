@@ -253,3 +253,34 @@ load_os_adapter() {
     # shellcheck disable=SC1090
     . "$adapter"
 }
+
+###############################################################################
+# Protected Account Check
+###############################################################################
+
+# is_protected_account <username>
+#   Return 0 if the account is in PROTECTED_ACCOUNTS or ACCOUNT_ALLOWLIST.
+#   Every account manipulation function in adapters must call this first.
+is_protected_account() {
+    local account="${1:-}"
+    [[ -z "$account" ]] && return 1
+
+    # Check PROTECTED_ACCOUNTS (from config.sh)
+    local _acct
+    for _acct in ${PROTECTED_ACCOUNTS:-}; do
+        if [[ "$account" == "$_acct" ]]; then
+            log_warn "[GUARD] ${account} — protected account, skipping"
+            return 0
+        fi
+    done
+
+    # Check ACCOUNT_ALLOWLIST (from config.sh)
+    for _acct in ${ACCOUNT_ALLOWLIST:-}; do
+        if [[ "$account" == "$_acct" ]]; then
+            log_warn "[GUARD] ${account} — allowlisted account, skipping"
+            return 0
+        fi
+    done
+
+    return 1
+}

@@ -5,10 +5,9 @@
 # (01_baseline_hardening.sh and 02_check_and_restore.sh).
 #
 # Requires: lib/common.sh (log_*, OS_FAMILY, HOSTNAME_ORIG, BACKUP_DIR,
-#           BASELINE_SNAPSHOT_DIR, backup_file, create_backup_dir)
-#           lib/safety_guards.sh (is_protected_account, is_protected_service,
-#           guard_account_gt, guard_network_outbound,
-#           is_gtmon_required_port)
+#           BASELINE_SNAPSHOT_DIR, backup_file, create_backup_dir,
+#           is_protected_account)
+#           config.sh (PROTECTED_ACCOUNTS, SERVICE_ALLOWLIST)
 #
 # Exports: run_hardening(), run_checks(), create_baseline_snapshot(),
 #          kill_other_ssh_sessions(), check_auditd()
@@ -87,9 +86,21 @@ pkg_is_installed() {
     return 1
 }
 
+# _is_service_protected <service_label>
+#   Check if a launchd service label is in the SERVICE_ALLOWLIST.
+#   Handles both bare labels and .plist suffixed names.
+_is_service_protected() {
+    local svc="${1:-}"
+    local _s
+    for _s in ${SERVICE_ALLOWLIST:-}; do
+        [[ "$svc" == "$_s" || "$svc" == "${_s}.plist" ]] && return 0
+    done
+    return 1
+}
+
 svc_enable() {
     local svc="$1"
-    if is_protected_service "$svc"; then
+    if _is_service_protected "$svc"; then
         log_skip "svc_enable: refusing to modify protected service '$svc'"
         return 0
     fi
@@ -105,7 +116,7 @@ svc_enable() {
 
 svc_disable() {
     local svc="$1"
-    if is_protected_service "$svc"; then
+    if _is_service_protected "$svc"; then
         log_skip "svc_disable: refusing to modify protected service '$svc'"
         return 0
     fi
@@ -380,8 +391,6 @@ PF_EOF
         log_warn "pf rules load failed — check $pf_conf syntax"
     fi
 
-    # --- Safety: verify outbound ports are not blocked ---
-    guard_network_outbound || log_warn "Outbound port check flagged issues after firewall setup"
 }
 
 # [2] macOS system hardening
@@ -501,14 +510,17 @@ setup_ssh_hardening() {
             effective_pw_auth="yes"
         fi
     fi
-    # Protect automation account from password auth lockout
-    if [[ -n "${ANSIBLE_ACCOUNT:-}" ]] && [[ "${effective_pw_auth}" == "no" ]]; then
-        local ansible_home
-        ansible_home=$(dscl . -read "/Users/${ANSIBLE_ACCOUNT}" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
-        if [[ -n "$ansible_home" ]] && [[ ! -s "${ansible_home}/.ssh/authorized_keys" ]]; then
-            log_warn "Automation account '${ANSIBLE_ACCOUNT}' has no SSH key — forcing PasswordAuthentication=yes"
-            effective_pw_auth="yes"
-        fi
+    # Protect protected accounts from password auth lockout
+    if [[ "${effective_pw_auth}" == "no" ]]; then
+        local _pa _pa_home
+        for _pa in ${PROTECTED_ACCOUNTS:-}; do
+            _pa_home=$(dscl . -read "/Users/${_pa}" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+            if [[ -n "$_pa_home" ]] && [[ ! -s "${_pa_home}/.ssh/authorized_keys" ]]; then
+                log_warn "Protected account '${_pa}' has no SSH key — forcing PasswordAuthentication=yes"
+                effective_pw_auth="yes"
+                break
+            fi
+        done
     fi
 
     # Apply SSH settings directly to sshd_config using BSD sed
@@ -588,50 +600,50 @@ setup_nologin_accounts() {
     log_ok "Login-capable user accounts: $login_capable_count"
 }
 
-# [5] Sudoers — gt NOPASSWD preservation
-# SAFETY: exclude ANSIBLE_ACCOUNT lines from NOPASSWD removal.
+# [5] Sudoers — PROTECTED_ACCOUNTS NOPASSWD preservation
+# SAFETY: exclude PROTECTED_ACCOUNTS lines from NOPASSWD removal.
 setup_sudoers() {
     log_info "===== [5] sudoers NOPASSWD cleanup ====="
 
-    # Protect ANSIBLE_ACCOUNT NOPASSWD (similar to gt)
-    if [[ -n "${ANSIBLE_ACCOUNT:-}" ]]; then
-        local ansible_sudoers="/etc/sudoers.d/zz-ansible-nopasswd"
-        if [[ ! -f "$ansible_sudoers" ]] || ! grep -q "NOPASSWD" "$ansible_sudoers" 2>/dev/null; then
-            echo "${ANSIBLE_ACCOUNT} ALL=(ALL) NOPASSWD: ALL" > "$ansible_sudoers"
-            chmod 0440 "$ansible_sudoers"
-            if visudo -c -f "$ansible_sudoers" 2>/dev/null; then
-                log_ok "Ansible account NOPASSWD preserved: $ansible_sudoers"
+    # Create/verify sudoers drop-in for each PROTECTED_ACCOUNTS entry
+    local _pa _pa_sudoers
+    for _pa in ${PROTECTED_ACCOUNTS:-}; do
+        _pa_sudoers="/etc/sudoers.d/zz-${_pa}-nopasswd"
+        if [[ ! -f "$_pa_sudoers" ]] || ! grep -q "NOPASSWD" "$_pa_sudoers" 2>/dev/null; then
+            echo "${_pa} ALL=(ALL) NOPASSWD: ALL" > "$_pa_sudoers"
+            chmod 0440 "$_pa_sudoers"
+            chown root:wheel "$_pa_sudoers"
+            if visudo -c -f "$_pa_sudoers" 2>/dev/null; then
+                log_ok "Protected account NOPASSWD preserved: $_pa_sudoers"
             else
-                log_error "Ansible sudoers syntax error — removing"
-                rm -f "$ansible_sudoers"
+                log_error "Sudoers syntax error for ${_pa} — removing"
+                rm -f "$_pa_sudoers"
             fi
         fi
-    fi
-
-    # Ensure gt sudoers drop-in exists (safety_guards.sh handles this)
-    # Here we clean up other NOPASSWD entries
+    done
 
     if [[ -f /etc/sudoers ]]; then
         backup_file /etc/sudoers
 
-        # Remove NOPASSWD from non-gt, non-ansible lines in main sudoers
-        # Using BSD sed -i ''
+        # Build a filtered view of sudoers excluding all PROTECTED_ACCOUNTS lines
         local _sudoers_check
-        _sudoers_check=$(grep -v '^[[:space:]]*gt[[:space:]]' /etc/sudoers)
-        if [[ -n "${ANSIBLE_ACCOUNT:-}" ]]; then
-            _sudoers_check=$(printf '%s\n' "$_sudoers_check" | grep -v "^[[:space:]]*${ANSIBLE_ACCOUNT}[[:space:]]")
-        fi
+        _sudoers_check=$(cat /etc/sudoers)
+        for _pa in ${PROTECTED_ACCOUNTS:-}; do
+            _sudoers_check=$(printf '%s\n' "$_sudoers_check" | grep -v "^[[:space:]]*${_pa}[[:space:]]")
+        done
+
         if printf '%s\n' "$_sudoers_check" | grep -q 'NOPASSWD' 2>/dev/null; then
-            if [[ -n "${ANSIBLE_ACCOUNT:-}" ]]; then
-                sed -i '' "/^[[:space:]]*gt[[:space:]]/b; /^[[:space:]]*${ANSIBLE_ACCOUNT}[[:space:]]/b; s/\(ALL=(ALL)\)[[:space:]]*NOPASSWD:[[:space:]]*ALL/\1 ALL/;" /etc/sudoers
-                sed -i '' "/^[[:space:]]*gt[[:space:]]/b; /^[[:space:]]*${ANSIBLE_ACCOUNT}[[:space:]]/b; s/\(ALL=(ALL:ALL)\)[[:space:]]*NOPASSWD:[[:space:]]*ALL/\1 ALL/;" /etc/sudoers
-            else
-                sed -i '' '/^[[:space:]]*gt[[:space:]]/!{s/\(ALL=(ALL)\)[[:space:]]*NOPASSWD:[[:space:]]*ALL/\1 ALL/;}' /etc/sudoers
-                sed -i '' '/^[[:space:]]*gt[[:space:]]/!{s/\(ALL=(ALL:ALL)\)[[:space:]]*NOPASSWD:[[:space:]]*ALL/\1 ALL/;}' /etc/sudoers
-            fi
+            # Build sed skip pattern for all protected accounts
+            local _sed_skip=""
+            for _pa in ${PROTECTED_ACCOUNTS:-}; do
+                _sed_skip="${_sed_skip}/^[[:space:]]*${_pa}[[:space:]]/b; "
+            done
+
+            sed -i '' "${_sed_skip}s/\(ALL=(ALL)\)[[:space:]]*NOPASSWD:[[:space:]]*ALL/\1 ALL/;" /etc/sudoers
+            sed -i '' "${_sed_skip}s/\(ALL=(ALL:ALL)\)[[:space:]]*NOPASSWD:[[:space:]]*ALL/\1 ALL/;" /etc/sudoers
 
             if visudo -c 2>/dev/null; then
-                log_ok "sudoers NOPASSWD removed (gt preserved)"
+                log_ok "sudoers NOPASSWD removed (protected accounts preserved)"
             else
                 log_fail "sudoers syntax error after edit — manual review needed"
             fi
@@ -647,15 +659,10 @@ setup_sudoers() {
             [[ -f "$f" ]] || continue
             fname="$(basename "$f")"
 
-            # SAFETY: skip gt's sudoers drop-in
-            if [[ "$fname" == "00-gt-nopasswd" ]]; then
-                continue
-            fi
-
-            # SAFETY: skip ansible's sudoers drop-in
-            if [[ "$fname" == "zz-ansible-nopasswd" ]]; then
-                continue
-            fi
+            # SAFETY: skip protected accounts' sudoers drop-ins (zz-<account>-nopasswd)
+            case "$fname" in
+                zz-*-nopasswd) continue ;;
+            esac
 
             if grep -q 'NOPASSWD' "$f" 2>/dev/null; then
                 log_drift "sudoers.d NOPASSWD file: $f"
@@ -1142,36 +1149,40 @@ check_login_accounts() {
 }
 
 # [C5] Sudoers check
-# SAFETY: exclude ANSIBLE_ACCOUNT's NOPASSWD from drift detection
+# SAFETY: exclude PROTECTED_ACCOUNTS' NOPASSWD from drift detection
 check_sudoers() {
     log_info "===== [C5] sudoers NOPASSWD check ====="
 
     if [[ -f /etc/sudoers ]]; then
-        # Check for NOPASSWD excluding gt and ANSIBLE_ACCOUNT lines
-        local _sudoers_check
-        _sudoers_check=$(grep -v '^[[:space:]]*gt[[:space:]]' /etc/sudoers)
-        if [[ -n "${ANSIBLE_ACCOUNT:-}" ]]; then
-            _sudoers_check=$(printf '%s\n' "$_sudoers_check" | grep -v "^[[:space:]]*${ANSIBLE_ACCOUNT}[[:space:]]")
-        fi
+        # Build a filtered view excluding all PROTECTED_ACCOUNTS lines
+        local _sudoers_check _pa
+        _sudoers_check=$(cat /etc/sudoers)
+        for _pa in ${PROTECTED_ACCOUNTS:-}; do
+            _sudoers_check=$(printf '%s\n' "$_sudoers_check" | grep -v "^[[:space:]]*${_pa}[[:space:]]")
+        done
+
         if printf '%s\n' "$_sudoers_check" | grep -q 'NOPASSWD' 2>/dev/null; then
-            log_drift "sudoers has NOPASSWD (non-gt lines)!"
+            log_drift "sudoers has unauthorized NOPASSWD entries!"
             if [[ "$MODE" == "auto-restore" ]]; then
                 _mac_backup_before_restore /etc/sudoers
-                if [[ -n "${ANSIBLE_ACCOUNT:-}" ]]; then
-                    sed -i '' "/^[[:space:]]*gt[[:space:]]/b; /^[[:space:]]*${ANSIBLE_ACCOUNT}[[:space:]]/b; s/\(ALL=(ALL)\)[[:space:]]*NOPASSWD:[[:space:]]*ALL/\1 ALL/;" /etc/sudoers
-                    sed -i '' "/^[[:space:]]*gt[[:space:]]/b; /^[[:space:]]*${ANSIBLE_ACCOUNT}[[:space:]]/b; s/\(ALL=(ALL:ALL)\)[[:space:]]*NOPASSWD:[[:space:]]*ALL/\1 ALL/;" /etc/sudoers
-                else
-                    sed -i '' '/^[[:space:]]*gt[[:space:]]/!{s/\(ALL=(ALL)\)[[:space:]]*NOPASSWD:[[:space:]]*ALL/\1 ALL/;}' /etc/sudoers
-                    sed -i '' '/^[[:space:]]*gt[[:space:]]/!{s/\(ALL=(ALL:ALL)\)[[:space:]]*NOPASSWD:[[:space:]]*ALL/\1 ALL/;}' /etc/sudoers
-                fi
+
+                # Build sed skip pattern for all protected accounts
+                local _sed_skip=""
+                for _pa in ${PROTECTED_ACCOUNTS:-}; do
+                    _sed_skip="${_sed_skip}/^[[:space:]]*${_pa}[[:space:]]/b; "
+                done
+
+                sed -i '' "${_sed_skip}s/\(ALL=(ALL)\)[[:space:]]*NOPASSWD:[[:space:]]*ALL/\1 ALL/;" /etc/sudoers
+                sed -i '' "${_sed_skip}s/\(ALL=(ALL:ALL)\)[[:space:]]*NOPASSWD:[[:space:]]*ALL/\1 ALL/;" /etc/sudoers
+
                 if visudo -c 2>/dev/null; then
-                    log_restore "sudoers NOPASSWD removed (gt preserved)"
+                    log_restore "sudoers NOPASSWD removed (protected accounts preserved)"
                 else
                     log_fail "sudoers syntax error — manual check required"
                 fi
             fi
         else
-            log_ok "sudoers: no NOPASSWD (gt excluded from check)"
+            log_ok "sudoers: no unauthorized NOPASSWD entries"
         fi
     fi
 
@@ -1182,20 +1193,17 @@ check_sudoers() {
             while IFS= read -r f; do
                 local fname
                 fname="$(basename "$f")"
-                # SAFETY: skip gt's sudoers drop-in
-                if [[ "$fname" == "00-gt-nopasswd" ]]; then
-                    log_ok "gt NOPASSWD preserved: $f"
-                    continue
-                fi
-                # SAFETY: skip ansible's sudoers drop-in
-                if [[ "$fname" == "zz-ansible-nopasswd" ]]; then
-                    log_ok "Ansible NOPASSWD preserved: $f"
-                    continue
-                fi
+                # SAFETY: skip protected accounts' sudoers drop-ins
+                case "$fname" in
+                    zz-*-nopasswd)
+                        log_ok "Protected account NOPASSWD preserved: $f"
+                        continue
+                        ;;
+                esac
                 log_drift "sudoers.d NOPASSWD file: $f"
             done <<< "$nopasswd_files"
         else
-            log_ok "sudoers.d: no NOPASSWD (gt excluded)"
+            log_ok "sudoers.d: no unauthorized NOPASSWD entries"
         fi
     fi
 }
@@ -1574,13 +1582,9 @@ kill_other_ssh_sessions() {
         local user
         user=$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' ')
 
-        # Protect gt account and automation account
-        if [[ "$user" == "${PROTECTED_ACCOUNT_GT:-gt}" ]]; then
-            log_skip "  Skipping gt session: PID ${pid}"
-            continue
-        fi
-        if [[ -n "${ANSIBLE_ACCOUNT:-}" ]] && [[ "$user" == "${ANSIBLE_ACCOUNT}" ]]; then
-            log_skip "  Skipping automation account session: PID ${pid} (${user})"
+        # Protect all accounts in PROTECTED_ACCOUNTS and ACCOUNT_ALLOWLIST
+        if is_protected_account "$user"; then
+            log_skip "  Skipping protected account session: PID ${pid} (${user})"
             continue
         fi
 

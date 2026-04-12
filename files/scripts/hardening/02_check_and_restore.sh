@@ -18,8 +18,6 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 detect_os
 # shellcheck source=config.sh
 source "${SELF_DIR}/config.sh"
-# shellcheck source=lib/safety_guards.sh
-. "${SELF_DIR}/lib/safety_guards.sh"
 load_os_adapter
 
 # --- Parse arguments ---
@@ -113,6 +111,7 @@ main() {
     log_info "  Check & Restore v${HARDENING_VERSION} — START"
     log_info "  Host: ${HOSTNAME_ORIG}  OS: ${OS_FAMILY}/${OS_ID} ${OS_VERSION}"
     log_info "  Mode: ${MODE}  Timestamp: ${TIMESTAMP}"
+    log_info "  Protected: ${PROTECTED_ACCOUNTS:-none}"
     log_info "============================================================"
 
     require_privileged
@@ -145,10 +144,6 @@ main() {
         fi
     fi
 
-    # Pre-flight safety guards
-    log_info "--- Pre-flight safety guards ---"
-    run_all_guards
-
     # Run checks (adapter function — reads global $MODE)
     log_info "--- Running drift checks (${OS_FAMILY}) ---"
     run_checks
@@ -158,10 +153,6 @@ main() {
         log_info "--- Checking auditd configuration ---"
         check_auditd
     fi
-
-    # Post-flight safety guards
-    log_info "--- Post-flight safety guards ---"
-    run_all_guards
 
     # Cleanup old backups
     cleanup_old_backups
