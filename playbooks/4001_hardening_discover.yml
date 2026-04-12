@@ -197,6 +197,7 @@
 # ─── Play 2: 로컬 아티팩트 생성 (sudo 불필요) ───
 - name: "4001 — Hardening Discovery (아티팩트 생성)"
   hosts: all
+  become: false
   gather_facts: no
   any_errors_fatal: false
 
