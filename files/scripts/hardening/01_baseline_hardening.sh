@@ -160,8 +160,6 @@ main() {
     # g. Log completion banner
     log_info "============================================================"
     log_info "  Baseline Hardening v${HARDENING_VERSION} — COMPLETE"
-    log_info "  Drifts restored : ${DRIFT_COUNT}"
-    log_info "  Restores        : ${RESTORE_COUNT}"
     log_info "  Failures        : ${FAIL_COUNT}"
     log_info "============================================================"
 
