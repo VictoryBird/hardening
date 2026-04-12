@@ -628,7 +628,7 @@ setup_sudoers() {
 
         # Build a filtered view of sudoers excluding all PROTECTED_ACCOUNTS lines
         local _sudoers_check
-        _sudoers_check=$(cat /etc/sudoers)
+        _sudoers_check=$(grep -v '^[[:space:]]*#' /etc/sudoers)
         for _pa in ${PROTECTED_ACCOUNTS:-}; do
             _sudoers_check=$(printf '%s\n' "$_sudoers_check" | grep -v "^[[:space:]]*${_pa}[[:space:]]")
         done
@@ -1157,7 +1157,7 @@ check_sudoers() {
     if [[ -f /etc/sudoers ]]; then
         # Build a filtered view excluding all PROTECTED_ACCOUNTS lines
         local _sudoers_check _pa
-        _sudoers_check=$(cat /etc/sudoers)
+        _sudoers_check=$(grep -v '^[[:space:]]*#' /etc/sudoers)
         for _pa in ${PROTECTED_ACCOUNTS:-}; do
             _sudoers_check=$(printf '%s\n' "$_sudoers_check" | grep -v "^[[:space:]]*${_pa}[[:space:]]")
         done

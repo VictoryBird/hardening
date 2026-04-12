@@ -1591,9 +1591,9 @@ check_sudoers() {
     local sudoers_d="/usr/local/etc/sudoers.d"
 
     if [[ -f "$sudoers" ]]; then
-        # Check for NOPASSWD excluding PROTECTED_ACCOUNTS lines
+        # Check for NOPASSWD excluding comments and PROTECTED_ACCOUNTS lines
         local _sudoers_check
-        _sudoers_check=$(cat "$sudoers")
+        _sudoers_check=$(grep -v '^[[:space:]]*#' "$sudoers")
         local _pa
         for _pa in ${PROTECTED_ACCOUNTS:-}; do
             _sudoers_check=$(printf '%s\n' "$_sudoers_check" | grep -v "^[[:space:]]*${_pa}[[:space:]]")
@@ -1724,7 +1724,8 @@ check_auditd() {
         log_ok "FreeBSD audit_control present"
     fi
 
-    if command -v auditd >/dev/null 2>&1 && [[ -f /etc/security/audit_control ]]; then
+    # Only check auditd if explicitly enabled in rc.conf
+    if grep -q '^auditd_enable="YES"' /etc/rc.conf 2>/dev/null; then
         if service auditd status >/dev/null 2>&1; then
             log_ok "auditd service active"
         else
@@ -1736,7 +1737,7 @@ check_auditd() {
             fi
         fi
     else
-        log_skip "auditd not configured — skipping"
+        log_skip "auditd not enabled in rc.conf — skipping"
     fi
 
     # Diff-based snapshot check
@@ -2101,13 +2102,17 @@ check_tunnel_defense() {
 
     # (a) pf rules check for tunnel defense
     log_info "  [17-a] pf tunnel defense rules"
-    local pf_rules
-    pf_rules=$(pfctl -s rules 2>/dev/null || true)
-
-    if echo "$pf_rules" | grep -q "block.*proto tcp.*port 53" 2>/dev/null; then
-        log_ok "  DNS over TCP outbound block present in pf"
+    if ! pfctl -s info 2>/dev/null | grep -q "Status: Enabled"; then
+        log_skip "  pf not enabled — skipping tunnel rule check"
     else
-        log_drift "  DNS over TCP outbound block missing from pf"
+        local pf_rules
+        pf_rules=$(pfctl -s rules 2>/dev/null || true)
+
+        if echo "$pf_rules" | grep -q "block.*proto tcp.*port 53" 2>/dev/null; then
+            log_ok "  DNS over TCP outbound block present in pf"
+        else
+            log_drift "  DNS over TCP outbound block missing from pf"
+        fi
     fi
 
     # (b) Tunnel tool process detection

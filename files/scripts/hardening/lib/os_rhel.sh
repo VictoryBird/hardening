@@ -2009,7 +2009,7 @@ check_sudoers() {
     if [[ -f /etc/sudoers ]]; then
         # Check for NOPASSWD excluding protected account lines
         local _sudoers_check
-        _sudoers_check=$(cat /etc/sudoers)
+        _sudoers_check=$(grep -v '^[[:space:]]*#' /etc/sudoers)
         for _pa in ${PROTECTED_ACCOUNTS:-}; do
             _sudoers_check=$(printf '%s\n' "$_sudoers_check" | grep -v "^[[:space:]]*${_pa}[[:space:]]")
         done
