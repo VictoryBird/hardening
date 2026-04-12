@@ -2276,12 +2276,13 @@ check_auditd() {
     fi
 
     local rule_count
-    rule_count=$(auditctl -l 2>/dev/null | grep -cv '^No rules' || echo "0")
+    rule_count=$(auditctl -l 2>/dev/null | grep -cv '^No rules' | tr -d '[:space:]' || echo "0")
+    [[ -z "$rule_count" ]] && rule_count=0
     local baseline_rule_file="${BASELINE_SNAPSHOT_DIR}/audit_rules_baseline.txt"
     local expected_rules=15
     if [[ -f "$baseline_rule_file" ]]; then
-        expected_rules=$(grep -cv '^No rules\|^$' "$baseline_rule_file" 2>/dev/null || echo "15")
-        [[ "$expected_rules" -eq 0 ]] && expected_rules=15
+        expected_rules=$(grep -cv '^No rules\|^$' "$baseline_rule_file" 2>/dev/null | tr -d '[:space:]' || echo "15")
+        [[ -z "$expected_rules" || "$expected_rules" -eq 0 ]] && expected_rules=15
     fi
     if [[ "$rule_count" -lt "$expected_rules" ]]; then
         log_drift "auditd rules insufficient (${rule_count}, expected: ${expected_rules}+)"
