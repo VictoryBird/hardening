@@ -272,7 +272,7 @@
         protected="{{ hardening_environment.PROTECTED_ACCOUNTS | default('') }}"
         killed=0
         # Get all sshd child processes (user sessions), skip master sshd
-        for pid in $(pgrep -f 'sshd:.*@' 2>/dev/null); do
+        for pid in $(pgrep -f 'sshd.*:.*@' 2>/dev/null); do
           user=$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' ')
           [ -z "$user" ] && continue
           # Check if user is protected
