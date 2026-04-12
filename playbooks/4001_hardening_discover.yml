@@ -194,15 +194,16 @@
       set_fact:
         all_service_allowlist: "{{ (discovered_agent_services + ' ' + discovered_running_services) | trim }}"
 
-# ─── Play 2: 로컬 아티팩트 생성 (sudo 불필요) ───
+# ─── Play 2: 로컬 아티팩트 생성 (delegate_to 사용 안 함 — inventory ansible_become 회피) ───
 - name: "4001 — Hardening Discovery (아티팩트 생성)"
-  hosts: all
-  become: false
+  hosts: localhost
+  connection: local
   gather_facts: no
   any_errors_fatal: false
 
   vars:
     artifact_dir: "{{ playbook_dir }}/../artifacts/hardening_discover"
+    target_hosts: "{{ groups['all'] | difference(['localhost']) }}"
 
   tasks:
     - name: "아티팩트 디렉토리 생성"
@@ -210,35 +211,33 @@
         path: "{{ artifact_dir }}"
         state: directory
         mode: "0755"
-      delegate_to: localhost
-      run_once: true
 
     - name: "호스트별 아티팩트 YAML 생성"
       copy:
         content: |
           ---
-          # 자동 수집: {{ ansible_date_time.iso8601 }}
-          # 서버: {{ inventory_hostname }} ({{ ansible_distribution }} {{ ansible_distribution_version }})
+          # 자동 수집: {{ hostvars[item].ansible_date_time.iso8601 }}
+          # 서버: {{ item }} ({{ hostvars[item].ansible_distribution }} {{ hostvars[item].ansible_distribution_version }})
           # 이 파일의 내용을 확인한 후, 필요시 수정하여
-          # inventories/lab/host_vars/{{ inventory_hostname }}.yml 에 하드닝 변수를 추가하세요.
+          # inventories/lab/host_vars/{{ item }}.yml 에 하드닝 변수를 추가하세요.
           #
           # 또는 이 파일을 그대로 4002_hardening_apply.yml 에 전달할 수 있습니다:
-          #   ansible-playbook 4002_hardening_apply.yml -i inventory -e "@artifacts/hardening_discover/{{ inventory_hostname }}.yml" --limit {{ inventory_hostname }}
+          #   ansible-playbook 4002_hardening_apply.yml -i inventory -e "@artifacts/hardening_discover/{{ item }}.yml" --limit {{ item }}
 
           # --- 방화벽 허용 포트 ---
-          hardening_allowed_ports: "{{ all_allowed_ports }}"
+          hardening_allowed_ports: "{{ hostvars[item].all_allowed_ports }}"
 
           # --- 보호 서비스 허용목록 ---
-          hardening_service_allowlist: "{{ discovered_agent_services }}"
+          hardening_service_allowlist: "{{ hostvars[item].discovered_agent_services }}"
 
           # --- 보호 계정 허용목록 ---
-          hardening_account_allowlist: "{{ discovered_agent_accounts }}"
+          hardening_account_allowlist: "{{ hostvars[item].discovered_agent_accounts }}"
 
           # --- IP 포워딩 (true=현재 활성화, false=비활성화) ---
-          hardening_ip_forward: "{{ ip_forward_enabled }}"
+          hardening_ip_forward: "{{ hostvars[item].ip_forward_enabled }}"
 
           # --- SSH 패스워드 인증 ---
-          hardening_ssh_password_auth: "{{ 'yes' if no_ssh_key else 'no' }}"
+          hardening_ssh_password_auth: "{{ 'yes' if hostvars[item].no_ssh_key else 'no' }}"
 
           # --- 추가 설정 (필요시 주석 해제) ---
           # hardening_extra_ports: ""
@@ -247,9 +246,9 @@
           # hardening_ssh_permit_root_login: "no"
           # hardening_tunnel_defense_enabled: "true"
           # hardening_disable_services: ""
-        dest: "{{ artifact_dir }}/{{ inventory_hostname }}.yml"
-      delegate_to: localhost
+        dest: "{{ artifact_dir }}/{{ item }}.yml"
+      loop: "{{ target_hosts }}"
 
     - name: "수집 완료 보고"
       debug:
-        msg: "artifacts/hardening_discover/{{ inventory_hostname }}.yml 생성 완료 — 적용 전 검토하세요."
+        msg: "{{ target_hosts | length }}개 호스트 아티팩트 생성 완료 — artifacts/hardening_discover/ 확인하세요."
