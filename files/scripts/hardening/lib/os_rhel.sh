@@ -881,7 +881,7 @@ setup_sudoers() {
 
     # Protect ANSIBLE_ACCOUNT NOPASSWD (similar to gt)
     if [[ -n "${ANSIBLE_ACCOUNT:-}" ]]; then
-        local ansible_sudoers="/etc/sudoers.d/99-ansible-nopasswd"
+        local ansible_sudoers="/etc/sudoers.d/zz-ansible-nopasswd"
         if [[ ! -f "$ansible_sudoers" ]] || ! grep -q "NOPASSWD" "$ansible_sudoers" 2>/dev/null; then
             echo "${ANSIBLE_ACCOUNT} ALL=(ALL) NOPASSWD: ALL" > "$ansible_sudoers"
             chmod 0440 "$ansible_sudoers"
@@ -934,7 +934,7 @@ setup_sudoers() {
                     log_skip "Preserving gt NOPASSWD: $f"
                     continue
                 fi
-                if [[ "$fname" == "99-ansible-nopasswd" ]]; then
+                if [[ "$fname" == "zz-ansible-nopasswd" ]]; then
                     log_skip "Preserving Ansible NOPASSWD: $f"
                     continue
                 fi
@@ -2054,7 +2054,7 @@ check_sudoers() {
                     continue
                 fi
                 # SAFETY: skip ansible's sudoers drop-in
-                if [[ "$fname" == "99-ansible-nopasswd" ]]; then
+                if [[ "$fname" == "zz-ansible-nopasswd" ]]; then
                     log_ok "Ansible NOPASSWD preserved: $f"
                     continue
                 fi
