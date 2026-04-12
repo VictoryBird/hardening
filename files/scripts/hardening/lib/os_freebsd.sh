@@ -2108,7 +2108,7 @@ check_tunnel_defense() {
         local pf_rules
         pf_rules=$(pfctl -s rules 2>/dev/null || true)
 
-        if echo "$pf_rules" | grep -q "block.*proto tcp.*port 53" 2>/dev/null; then
+        if echo "$pf_rules" | grep -qE "block.*proto tcp.*port.*(53|domain)" 2>/dev/null; then
             log_ok "  DNS over TCP outbound block present in pf"
         else
             log_drift "  DNS over TCP outbound block missing from pf"
