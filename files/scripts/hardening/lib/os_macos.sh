@@ -1201,6 +1201,15 @@ check_sudoers() {
                         continue
                         ;;
                 esac
+                # Skip files named after protected accounts
+                local _pa_skip=0
+                for _pa in ${PROTECTED_ACCOUNTS:-}; do
+                    [ "$fname" = "$_pa" ] && _pa_skip=1 && break
+                done
+                if [ $_pa_skip -eq 1 ]; then
+                    log_ok "Protected account NOPASSWD preserved: $f"
+                    continue
+                fi
                 log_drift "sudoers.d NOPASSWD file: $f"
             done <<< "$nopasswd_files"
         else

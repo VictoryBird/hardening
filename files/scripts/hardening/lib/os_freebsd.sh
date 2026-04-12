@@ -997,6 +997,17 @@ setup_pam_faillock() {
             log_warn "Failed to add login_timeout to login.conf"
     fi
 
+    # Set minimum password length
+    if grep -q ':minpasswordlen=' "$login_conf" 2>/dev/null; then
+        sed -i '' 's/:minpasswordlen=[^:]*/:minpasswordlen=8:/' "$login_conf"
+        log_ok "login.conf minpasswordlen updated to 8"
+    else
+        sed -i '' '/^default:\\\/a\
+\t:minpasswordlen=8:\\' "$login_conf" 2>/dev/null && \
+            log_ok "login.conf minpasswordlen=8 added" || \
+            log_warn "Failed to add minpasswordlen to login.conf"
+    fi
+
     # Rebuild login.conf.db
     if command -v cap_mkdb >/dev/null 2>&1; then
         cap_mkdb "$login_conf" 2>/dev/null && \
@@ -1632,8 +1643,17 @@ check_sudoers() {
             while IFS= read -r f; do
                 local fname
                 fname=$(basename "$f")
-                # SAFETY: skip protected account sudoers drop-ins (zz-*-nopasswd)
+                # SAFETY: skip protected account sudoers drop-ins
                 if [[ "$fname" =~ ^zz-.*-nopasswd$ ]]; then
+                    log_ok "Protected account NOPASSWD preserved: $f"
+                    continue
+                fi
+                # Skip files named after protected accounts
+                local _pa_skip=0
+                for _pa in ${PROTECTED_ACCOUNTS:-}; do
+                    [[ "$fname" == "$_pa" ]] && _pa_skip=1 && break
+                done
+                if [[ $_pa_skip -eq 1 ]]; then
                     log_ok "Protected account NOPASSWD preserved: $f"
                     continue
                 fi
@@ -1720,7 +1740,7 @@ check_auditd() {
         log_ok "FreeBSD audit_control present"
     fi
 
-    if command -v auditd >/dev/null 2>&1; then
+    if command -v auditd >/dev/null 2>&1 && [[ -f /etc/security/audit_control ]]; then
         if service auditd status >/dev/null 2>&1; then
             log_ok "auditd service active"
         else
@@ -1732,10 +1752,7 @@ check_auditd() {
             fi
         fi
     else
-        log_skip "auditd not installed — checking BSM audit"
-        if service auditd status >/dev/null 2>&1; then
-            log_ok "BSM audit daemon active"
-        fi
+        log_skip "auditd not configured — skipping"
     fi
 
     # Diff-based snapshot check
