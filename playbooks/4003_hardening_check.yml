@@ -26,24 +26,6 @@
     # 자동 복원 모드 (기본: 점검만)
     auto_restore: false
 
-    # 보안 에이전트 정의
-    known_agents:
-      wazuh:
-        processes: "wazuh-agentd wazuh-modulesd ossec-agentd"
-        services: "wazuh-agent"
-        ports: "1514/tcp 1515/tcp"
-        accounts: "wazuh ossec"
-      crowdstrike:
-        processes: "falcon-sensor"
-        services: "falcon-sensor"
-        ports: ""
-        accounts: ""
-      velociraptor:
-        processes: "velociraptor_client velociraptor"
-        services: "velociraptor_client"
-        ports: "8000/tcp"
-        accounts: ""
-
   tasks:
     # --- 0단계: discover 아티팩트 자동 로드 ---
     - name: "Discover 아티팩트 로드 (있으면)"
@@ -54,45 +36,6 @@
     # ═══════════════════════════════════════════════════════════
     # 1단계: 런타임 감지
     # ═══════════════════════════════════════════════════════════
-
-    # --- Ansible 접속 계정 감지 ---
-    - name: "Ansible 접속 계정 감지"
-      set_fact:
-        detected_ansible_account: "{{ ansible_user | default(ansible_env.USER) | default('root') }}"
-
-    # --- 보안 에이전트 런타임 감지 ---
-    - name: "보안 에이전트 런타임 감지"
-      shell: |
-        agent_ports=""
-        agent_services=""
-        agent_accounts=""
-        {% for agent_name, agent in known_agents.items() %}
-        {% for proc in agent.processes.split() %}
-        if pgrep -x "{{ proc }}" >/dev/null 2>&1; then
-          {% if agent.ports %}
-          agent_ports="{{ agent.ports }} ${agent_ports}"
-          {% endif %}
-          {% if agent.services %}
-          agent_services="{{ agent.services }} ${agent_services}"
-          {% endif %}
-          {% if agent.accounts %}
-          agent_accounts="{{ agent.accounts }} ${agent_accounts}"
-          {% endif %}
-        fi
-        {% endfor %}
-        {% endfor %}
-        echo "PORTS:${agent_ports}"
-        echo "SERVICES:${agent_services}"
-        echo "ACCOUNTS:${agent_accounts}"
-      register: agent_detection
-      changed_when: false
-      failed_when: false
-
-    - name: "에이전트 감지 결과 파싱"
-      set_fact:
-        detected_agent_ports: "{{ agent_detection.stdout_lines | select('match', '^PORTS:') | map('regex_replace', '^PORTS:', '') | first | default('') | trim }}"
-        detected_agent_services: "{{ agent_detection.stdout_lines | select('match', '^SERVICES:') | map('regex_replace', '^SERVICES:', '') | first | default('') | trim }}"
-        detected_agent_accounts: "{{ agent_detection.stdout_lines | select('match', '^ACCOUNTS:') | map('regex_replace', '^ACCOUNTS:', '') | first | default('') | trim }}"
 
     # --- IP 포워딩 감지 ---
     - name: "IP 포워딩 확인 (Linux)"
@@ -142,28 +85,15 @@
     # 2단계: environment 조합
     # ═══════════════════════════════════════════════════════════
 
-    - name: "허용 포트 조합"
-      set_fact:
-        final_allowed_ports: "{{ ((hardening_allowed_ports | default('')) + ' ' + (hardening_extra_ports | default('')) + ' ' + detected_agent_ports) | trim }}"
-
-    - name: "서비스 허용목록 조합"
-      set_fact:
-        final_service_allowlist: "{{ ((hardening_service_allowlist | default('')) + ' ' + (hardening_extra_services | default('')) + ' ' + detected_agent_services) | trim }}"
-
-    - name: "계정 허용목록 조합"
-      set_fact:
-        final_account_allowlist: "{{ ((hardening_account_allowlist | default('')) + ' ' + (hardening_extra_accounts | default('')) + ' ' + detected_agent_accounts) | trim }}"
-
     - name: "하드닝 environment 조립"
       set_fact:
         hardening_environment:
           HARDENING_PROFILE: "custom"
-          CUSTOM_ALLOWED_PORTS: "{{ final_allowed_ports }}"
+          CUSTOM_ALLOWED_PORTS: "{{ hardening_allowed_ports | default('') }}"
           SSH_PASSWORD_AUTH: "{{ final_ssh_pw_auth | trim }}"
           SYSCTL_DISABLE_IP_FORWARD: "{{ final_ip_forward | trim }}"
-          SERVICE_ALLOWLIST: "{{ final_service_allowlist }}"
-          ACCOUNT_ALLOWLIST: "{{ final_account_allowlist }}"
-          PROTECTED_ACCOUNTS: "gt {{ detected_ansible_account }}"
+          SERVICE_ALLOWLIST: "{{ hardening_service_allowlist | default('') }}"
+          ACCOUNT_ALLOWLIST: "{{ hardening_account_allowlist | default('') }}"
           SSH_PERMIT_ROOT_LOGIN: "{{ hardening_ssh_permit_root_login | default('') }}"
           DISABLE_SERVICES: "{{ hardening_disable_services | default('') }}"
 

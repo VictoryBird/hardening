@@ -265,7 +265,7 @@ is_protected_account() {
     local account="${1:-}"
     [[ -z "$account" ]] && return 1
 
-    # Check PROTECTED_ACCOUNTS (from config.sh)
+    # Check PROTECTED_ACCOUNTS (공통 보호 — config.sh 기본값 또는 환경변수)
     local _acct
     for _acct in ${PROTECTED_ACCOUNTS:-}; do
         if [[ "$account" == "$_acct" ]]; then
@@ -274,7 +274,7 @@ is_protected_account() {
         fi
     done
 
-    # Check ACCOUNT_ALLOWLIST (from config.sh)
+    # Check ACCOUNT_ALLOWLIST (서버별 보호 — 아티팩트에서 전달)
     for _acct in ${ACCOUNT_ALLOWLIST:-}; do
         if [[ "$account" == "$_acct" ]]; then
             log_warn "[GUARD] ${account} — allowlisted account, skipping"

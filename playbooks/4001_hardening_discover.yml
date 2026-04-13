@@ -17,25 +17,6 @@
   gather_facts: yes
   any_errors_fatal: false
 
-  vars:
-    # 보안 에이전트 정의
-    known_agents:
-      wazuh:
-        processes: "wazuh-agentd wazuh-modulesd ossec-agentd"
-        services: "wazuh-agent"
-        ports: "1514/tcp 1515/tcp"
-        accounts: "wazuh ossec"
-      crowdstrike:
-        processes: "falcon-sensor"
-        services: "falcon-sensor"
-        ports: ""
-        accounts: ""
-      velociraptor:
-        processes: "velociraptor_client velociraptor"
-        services: "velociraptor_client"
-        ports: "8000/tcp"
-        accounts: ""
-
   tasks:
     # ─── 1. 리스닝 포트 수집 ───
     - name: "리스닝 포트 수집"
@@ -63,45 +44,7 @@
       debug:
         msg: "리스닝 포트: {{ discovered_ports_formatted }}"
 
-    # ─── 2. 보안 에이전트 감지 ───
-    - name: "보안 에이전트 감지"
-      shell: |
-        agent_ports=""
-        agent_services=""
-        agent_accounts=""
-        {% for agent_name, agent in known_agents.items() %}
-        {% for proc in agent.processes.split() %}
-        if pgrep -x "{{ proc }}" >/dev/null 2>&1; then
-          {% if agent.ports %}
-          agent_ports="{{ agent.ports }} ${agent_ports}"
-          {% endif %}
-          {% if agent.services %}
-          agent_services="{{ agent.services }} ${agent_services}"
-          {% endif %}
-          {% if agent.accounts %}
-          agent_accounts="{{ agent.accounts }} ${agent_accounts}"
-          {% endif %}
-        fi
-        {% endfor %}
-        {% endfor %}
-        echo "PORTS:${agent_ports}"
-        echo "SERVICES:${agent_services}"
-        echo "ACCOUNTS:${agent_accounts}"
-      register: agent_detection
-      changed_when: false
-      failed_when: false
-
-    - name: "에이전트 감지 결과 파싱"
-      set_fact:
-        discovered_agent_ports: "{{ agent_detection.stdout_lines | select('match', '^PORTS:') | map('regex_replace', '^PORTS:', '') | first | default('') | trim }}"
-        discovered_agent_services: "{{ agent_detection.stdout_lines | select('match', '^SERVICES:') | map('regex_replace', '^SERVICES:', '') | first | default('') | trim }}"
-        discovered_agent_accounts: "{{ agent_detection.stdout_lines | select('match', '^ACCOUNTS:') | map('regex_replace', '^ACCOUNTS:', '') | first | default('') | trim }}"
-
-    - name: "감지된 에이전트 로그"
-      debug:
-        msg: "에이전트 — 포트: [{{ discovered_agent_ports }}], 서비스: [{{ discovered_agent_services }}], 계정: [{{ discovered_agent_accounts }}]"
-
-    # ─── 3. IP 포워딩 감지 ───
+    # ─── 2. IP 포워딩 감지 ───
     - name: "IP 포워딩 확인"
       shell: |
         {% if ansible_system == "Linux" %}
@@ -117,7 +60,7 @@
       set_fact:
         ip_forward_enabled: "{{ (ip_forward_check.stdout | default('0') | trim) == '1' }}"
 
-    # ─── 4. SSH 키 존재 확인 ───
+    # ─── 3. SSH 키 존재 확인 ───
     - name: "SSH authorized_keys 확인"
       stat:
         path: "{{ ansible_env.HOME }}/.ssh/authorized_keys"
@@ -127,32 +70,6 @@
       set_fact:
         no_ssh_key: "{{ not (user_ssh_key.stat.exists | default(false)) or (user_ssh_key.stat.size | default(0)) == 0 }}"
 
-    # ─── 5. 실행 중인 서비스 수집 ───
-    - name: "실행 서비스 수집"
-      shell: |
-        {% if ansible_system == "Linux" %}
-        systemctl list-units --type=service --state=active --no-legend 2>/dev/null | awk '{print $1}' | sed 's/\.service$//' | sort
-        {% elif ansible_system == "FreeBSD" %}
-        service -e 2>/dev/null | xargs -I{} basename {} | sort
-        {% elif ansible_system == "Darwin" %}
-        launchctl list 2>/dev/null | awk 'NR>1 {print $3}' | grep -v '^-$' | sort
-        {% endif %}
-      register: running_services_raw
-      changed_when: false
-      failed_when: false
-
-    - name: "서비스 목록 조합"
-      set_fact:
-        discovered_running_services: "{{ running_services_raw.stdout_lines | default([]) | join(' ') }}"
-
-    # ─── 6. 포트 합산 (수집 포트 + 에이전트 포트) ───
-    - name: "전체 허용 포트 조합"
-      set_fact:
-        all_allowed_ports: "{{ (discovered_ports_formatted + ' ' + discovered_agent_ports) | trim }}"
-
-    - name: "전체 서비스 허용목록 조합"
-      set_fact:
-        all_service_allowlist: "{{ (discovered_agent_services + ' ' + discovered_running_services) | trim }}"
 
 # ─── Play 2: 로컬 아티팩트 생성 (delegate_to 사용 안 함 — inventory ansible_become 회피) ───
 - name: "4001 — Hardening Discovery (아티팩트 생성)"
@@ -184,13 +101,13 @@
           # 4002/4003 플레이북 실행 시 이 파일이 자동으로 로드됩니다.
 
           # --- 방화벽 허용 포트 ---
-          hardening_allowed_ports: "{{ hostvars[item].all_allowed_ports }}"
+          hardening_allowed_ports: "{{ hostvars[item].discovered_ports_formatted }}"
 
-          # --- 보호 서비스 허용목록 ---
-          hardening_service_allowlist: "{{ hostvars[item].discovered_agent_services }}"
+          # --- 보호 서비스 (필요시 수동 입력, 공백 구분) ---
+          hardening_service_allowlist: ""
 
-          # --- 보호 계정 허용목록 ---
-          hardening_account_allowlist: "{{ hostvars[item].discovered_agent_accounts }}"
+          # --- 보호 계정 (필요시 수동 입력, 공백 구분) ---
+          hardening_account_allowlist: ""
 
           # --- IP 포워딩 (true=현재 활성화, false=비활성화) ---
           hardening_ip_forward: "{{ hostvars[item].ip_forward_enabled }}"
@@ -199,9 +116,6 @@
           hardening_ssh_password_auth: "{{ 'yes' if hostvars[item].no_ssh_key else 'no' }}"
 
           # --- 추가 설정 (필요시 주석 해제) ---
-          # hardening_extra_ports: ""
-          # hardening_extra_services: ""
-          # hardening_extra_accounts: ""
           # hardening_ssh_permit_root_login: "no"
           # hardening_harden_tunnel_defense: "true"
           # hardening_disable_services: ""
