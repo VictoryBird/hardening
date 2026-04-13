@@ -323,8 +323,9 @@ setup_firewall() {
         log_info "pf: CUSTOM_ALLOWED_PORTS 사용 (ports: ${profile_ports})"
     else
         # 폴백: 프로파일 기반 포트
-        profile_ports="${BSD_PF_PROFILES[$BSD_PF_PROFILE]:-}"
-        if [[ -z "$profile_ports" ]]; then
+        if [[ -n "${BSD_PF_PROFILES[$BSD_PF_PROFILE]+x}" ]]; then
+            profile_ports="${BSD_PF_PROFILES[$BSD_PF_PROFILE]}"
+        else
             log_warn "Unknown pf profile: ${BSD_PF_PROFILE} — using base"
             profile_ports="${BSD_PF_PROFILES[base]}"
         fi

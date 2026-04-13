@@ -673,8 +673,9 @@ setup_ufw() {
         log_info "UFW: CUSTOM_ALLOWED_PORTS 사용 (ports: ${profile_ports})"
     else
         # 폴백: 프로파일 기반 포트
-        profile_ports="${DEB_UFW_PROFILES[$DEB_UFW_PROFILE]:-}"
-        if [[ -z "$profile_ports" ]]; then
+        if [[ -n "${DEB_UFW_PROFILES[$DEB_UFW_PROFILE]+x}" ]]; then
+            profile_ports="${DEB_UFW_PROFILES[$DEB_UFW_PROFILE]}"
+        else
             log_warn "Unknown UFW profile: ${DEB_UFW_PROFILE} — using base"
             profile_ports="${DEB_UFW_PROFILES[base]}"
         fi

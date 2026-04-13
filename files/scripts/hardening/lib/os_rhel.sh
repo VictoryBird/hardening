@@ -635,8 +635,9 @@ setup_firewall() {
         log_info "firewalld: CUSTOM_ALLOWED_PORTS 사용 (ports: ${profile_ports})"
     else
         # 폴백: 프로파일 기반 포트
-        profile_ports="${RHEL_FIREWALLD_PROFILES[$RHEL_FIREWALLD_PROFILE]:-}"
-        if [[ -z "$profile_ports" ]]; then
+        if [[ -n "${RHEL_FIREWALLD_PROFILES[$RHEL_FIREWALLD_PROFILE]+x}" ]]; then
+            profile_ports="${RHEL_FIREWALLD_PROFILES[$RHEL_FIREWALLD_PROFILE]}"
+        else
             log_warn "Unknown firewalld profile: ${RHEL_FIREWALLD_PROFILE} — using base"
             profile_ports="${RHEL_FIREWALLD_PROFILES[base]}"
         fi
