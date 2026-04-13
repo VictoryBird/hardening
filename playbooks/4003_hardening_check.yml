@@ -3,12 +3,16 @@
 # 4003 — 하드닝 점검/복원 (Check & Restore)
 # ═══════════════════════════════════════════════════════════════
 # 사용법:
-#   # 점검만 (기본) — discover 아티팩트는 자동 로드됩니다
+#   # 점검만 (기본) — 대상 서버의 베이스라인 스냅샷과 현재 상태를 비교합니다
 #   ansible-playbook playbooks/4003_hardening_check.yml -i inventory
 #
 #   # 자동 복원
 #   ansible-playbook playbooks/4003_hardening_check.yml -i inventory \
 #     -e "auto_restore=true"
+#
+# 참고:
+#   4003은 4002가 생성한 /var/lib/hardening/baseline/ 스냅샷만 사용합니다.
+#   discover 아티팩트를 다시 로드하지 않습니다.
 # ═══════════════════════════════════════════════════════════════
 - name: "4003 — Hardening Check & Restore"
   hosts: all
@@ -27,78 +31,8 @@
     auto_restore: false
 
   tasks:
-    # --- 0단계: discover 아티팩트 자동 로드 ---
-    - name: "Discover 아티팩트 로드 (있으면)"
-      include_vars:
-        file: "{{ playbook_dir }}/../artifacts/hardening_discover/{{ inventory_hostname }}.yml"
-      ignore_errors: true
-
     # ═══════════════════════════════════════════════════════════
-    # 1단계: 런타임 감지
-    # ═══════════════════════════════════════════════════════════
-
-    # --- IP 포워딩 감지 ---
-    - name: "IP 포워딩 확인 (Linux)"
-      command: sysctl -n net.ipv4.ip_forward
-      register: ip_forward_check
-      changed_when: false
-      failed_when: false
-      when: ansible_system == "Linux"
-
-    - name: "IP 포워딩 확인 (FreeBSD)"
-      command: sysctl -n net.inet.ip.forwarding
-      register: ip_forward_check
-      changed_when: false
-      failed_when: false
-      when: ansible_system == "FreeBSD"
-
-    - name: "IP 포워딩 확인 (macOS)"
-      command: sysctl -n net.inet.ip.forwarding
-      register: ip_forward_check
-      changed_when: false
-      failed_when: false
-      when: ansible_system == "Darwin"
-
-    - name: "IP 포워딩 설정값 결정"
-      set_fact:
-        final_ip_forward: >-
-          {%- if hardening_ip_forward is defined -%}
-            {{ 'false' if (hardening_ip_forward | string) in ['true', 'True', '1'] else 'true' }}
-          {%- else -%}
-            {{ 'false' if (ip_forward_check.stdout | default('0') | trim) == '1' else 'true' }}
-          {%- endif -%}
-
-    # --- SSH 키 확인 ---
-    - name: "SSH authorized_keys 확인"
-      stat:
-        path: "{{ ansible_env.HOME }}/.ssh/authorized_keys"
-      register: ansible_user_ssh_key
-
-    - name: "SSH 패스워드 인증 결정"
-      set_fact:
-        final_ssh_pw_auth: >-
-          {%- if hardening_ssh_password_auth is defined -%}{{ hardening_ssh_password_auth }}
-          {%- elif not (ansible_user_ssh_key.stat.exists | default(false)) or (ansible_user_ssh_key.stat.size | default(0)) == 0 -%}yes
-          {%- else -%}no{%- endif -%}
-
-    # ═══════════════════════════════════════════════════════════
-    # 2단계: environment 조합
-    # ═══════════════════════════════════════════════════════════
-
-    - name: "하드닝 environment 조립"
-      set_fact:
-        hardening_environment:
-          HARDENING_PROFILE: "custom"
-          CUSTOM_ALLOWED_PORTS: "{{ hardening_allowed_ports | default('') }}"
-          SSH_PASSWORD_AUTH: "{{ final_ssh_pw_auth | trim }}"
-          SYSCTL_DISABLE_IP_FORWARD: "{{ final_ip_forward | trim }}"
-          SERVICE_ALLOWLIST: "{{ hardening_service_allowlist | default('') }}"
-          ACCOUNT_ALLOWLIST: "{{ hardening_account_allowlist | default('') }}"
-          SSH_PERMIT_ROOT_LOGIN: "{{ hardening_ssh_permit_root_login | default('') }}"
-          DISABLE_SERVICES: "{{ hardening_disable_services | default('') }}"
-
-    # ═══════════════════════════════════════════════════════════
-    # 3단계: 스크립트 배포
+    # 1단계: 스크립트 배포
     # ═══════════════════════════════════════════════════════════
 
     - name: "하드닝 디렉토리 생성"
@@ -125,14 +59,13 @@
         - 02_check_and_restore.sh
 
     # ═══════════════════════════════════════════════════════════
-    # 4단계: 점검/복원 실행
+    # 2단계: 점검/복원 실행 (베이스라인 스냅샷 기반)
     # ═══════════════════════════════════════════════════════════
 
     - name: "점검/복원 실행"
       command: >-
         bash {{ hardening_deploy_path }}/02_check_and_restore.sh
         {{ '--auto-restore' if (auto_restore | bool) else '--check-only' }}
-      environment: "{{ hardening_environment }}"
       register: check_async
       failed_when: false
       async: 600
