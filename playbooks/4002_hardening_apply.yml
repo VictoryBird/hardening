@@ -161,48 +161,16 @@
 
     - name: "하드닝 environment 조립"
       set_fact:
-        hardening_environment: >-
-          {{
-            {
-              'HARDENING_PROFILE': 'custom',
-              'CUSTOM_ALLOWED_PORTS': final_allowed_ports,
-              'SSH_PASSWORD_AUTH': final_ssh_pw_auth | trim,
-              'SYSCTL_DISABLE_IP_FORWARD': final_ip_forward | trim,
-              'SERVICE_ALLOWLIST': final_service_allowlist,
-              'ACCOUNT_ALLOWLIST': final_account_allowlist,
-              'PROTECTED_ACCOUNTS': 'gt ' + detected_ansible_account,
-              'SSH_PERMIT_ROOT_LOGIN': hardening_ssh_permit_root_login | default(''),
-              'DISABLE_SERVICES': hardening_disable_services | default('')
-            }
-            | combine(
-              {
-                'HARDEN_FIREWALL': HARDEN_FIREWALL,
-                'HARDEN_SSH': HARDEN_SSH,
-                'HARDEN_PAM': HARDEN_PAM,
-                'HARDEN_FAILLOCK': HARDEN_FAILLOCK,
-                'HARDEN_SYSCTL': HARDEN_SYSCTL,
-                'HARDEN_ACCOUNTS': HARDEN_ACCOUNTS,
-                'HARDEN_SUDOERS': HARDEN_SUDOERS,
-                'HARDEN_SERVICES': HARDEN_SERVICES,
-                'HARDEN_FILE_PERMISSIONS': HARDEN_FILE_PERMISSIONS,
-                'HARDEN_SUID': HARDEN_SUID,
-                'HARDEN_EMPTY_PASSWORDS': HARDEN_EMPTY_PASSWORDS,
-                'HARDEN_KERNEL_MODULES': HARDEN_KERNEL_MODULES,
-                'HARDEN_MOUNT': HARDEN_MOUNT,
-                'HARDEN_HIDEPID': HARDEN_HIDEPID,
-                'HARDEN_CORE_DUMP': HARDEN_CORE_DUMP,
-                'HARDEN_UMASK': HARDEN_UMASK,
-                'HARDEN_BANNER': HARDEN_BANNER,
-                'HARDEN_TUNNEL_DEFENSE': HARDEN_TUNNEL_DEFENSE,
-                'HARDEN_LOGIN_DEFS': HARDEN_LOGIN_DEFS,
-                'HARDEN_CRON': HARDEN_CRON,
-                'HARDEN_OTHER_PERMS': HARDEN_OTHER_PERMS
-              } | dict2items
-                | selectattr('value', 'defined')
-                | selectattr('value', 'ne', '')
-                | items2dict
-            )
-          }}
+        hardening_environment:
+          HARDENING_PROFILE: "custom"
+          CUSTOM_ALLOWED_PORTS: "{{ final_allowed_ports }}"
+          SSH_PASSWORD_AUTH: "{{ final_ssh_pw_auth | trim }}"
+          SYSCTL_DISABLE_IP_FORWARD: "{{ final_ip_forward | trim }}"
+          SERVICE_ALLOWLIST: "{{ final_service_allowlist }}"
+          ACCOUNT_ALLOWLIST: "{{ final_account_allowlist }}"
+          PROTECTED_ACCOUNTS: "gt {{ detected_ansible_account }}"
+          SSH_PERMIT_ROOT_LOGIN: "{{ hardening_ssh_permit_root_login | default('') }}"
+          DISABLE_SERVICES: "{{ hardening_disable_services | default('') }}"
 
     - name: "최종 environment 로그"
       debug:
