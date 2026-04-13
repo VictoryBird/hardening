@@ -1410,7 +1410,7 @@ setup_auditd() {
         fi
     fi
     # NOTE: Do NOT write auditd.conf or modify rules.
-    # The orchestrator calls guard_auditd_snapshot_only() separately.
+    # The orchestrator calls snapshot_auditd() separately.
 }
 
 ###############################################################################

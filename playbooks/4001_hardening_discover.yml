@@ -194,11 +194,8 @@
           ---
           # 자동 수집: {{ hostvars[item].ansible_date_time.iso8601 }}
           # 서버: {{ item }} ({{ hostvars[item].ansible_distribution }} {{ hostvars[item].ansible_distribution_version }})
-          # 이 파일의 내용을 확인한 후, 필요시 수정하여
-          # inventories/lab/host_vars/{{ item }}.yml 에 하드닝 변수를 추가하세요.
-          #
-          # 또는 이 파일을 그대로 4002_hardening_apply.yml 에 전달할 수 있습니다:
-          #   ansible-playbook 4002_hardening_apply.yml -i inventory -e "@artifacts/hardening_discover/{{ item }}.yml" --limit {{ item }}
+          # 이 파일의 내용을 검토한 후, 필요시 포트를 추가/수정하세요.
+          # 4002/4003 플레이북 실행 시 이 파일이 자동으로 로드됩니다.
 
           # --- 방화벽 허용 포트 ---
           hardening_allowed_ports: "{{ hostvars[item].all_allowed_ports }}"
@@ -220,7 +217,7 @@
           # hardening_extra_services: ""
           # hardening_extra_accounts: ""
           # hardening_ssh_permit_root_login: "no"
-          # hardening_tunnel_defense_enabled: "true"
+          # hardening_harden_tunnel_defense: "true"
           # hardening_disable_services: ""
         dest: "{{ artifact_dir }}/{{ item }}.yml"
       loop: "{{ target_hosts }}"

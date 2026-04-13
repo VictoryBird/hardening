@@ -28,18 +28,18 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 detect_os
 
 # ---------------------------------------------------------------------------
-# 2a. Source config
+# 3. Source config
 # ---------------------------------------------------------------------------
 # shellcheck source=config.sh
 source "${SELF_DIR}/config.sh"
 
 # ---------------------------------------------------------------------------
-# 3. Load OS adapter
+# 4. Load OS adapter
 # ---------------------------------------------------------------------------
 load_os_adapter
 
 # ---------------------------------------------------------------------------
-# 4. auditd snapshot function
+# 5. auditd snapshot function
 # ---------------------------------------------------------------------------
 snapshot_auditd() {
     log_info "Snapshotting auditd configuration (read-only)"

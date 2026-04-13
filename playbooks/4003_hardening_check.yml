@@ -3,13 +3,12 @@
 # 4003 — 하드닝 점검/복원 (Check & Restore)
 # ═══════════════════════════════════════════════════════════════
 # 사용법:
-#   # 점검만 (기본)
-#   ansible-playbook playbooks/4003_hardening_check.yml -i inventory \
-#     -e "@artifacts/hardening_discover/web01.yml" --limit web01
+#   # 점검만 (기본) — discover 아티팩트는 자동 로드됩니다
+#   ansible-playbook playbooks/4003_hardening_check.yml -i inventory
 #
 #   # 자동 복원
 #   ansible-playbook playbooks/4003_hardening_check.yml -i inventory \
-#     -e "@artifacts/hardening_discover/web01.yml" -e "auto_restore=true" --limit web01
+#     -e "auto_restore=true"
 # ═══════════════════════════════════════════════════════════════
 - name: "4003 — Hardening Check & Restore"
   hosts: all

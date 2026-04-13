@@ -3,12 +3,9 @@
 # 4002 — 하드닝 적용 (Apply)
 # ═══════════════════════════════════════════════════════════════
 # 사용법:
-#   # 수집 결과 파일을 변수로 전달
-#   ansible-playbook playbooks/4002_hardening_apply.yml -i inventory \
-#     -e "@artifacts/hardening_discover/web01.yml" --limit web01
-#
-#   # 또는 host_vars에 변수가 있으면 직접 실행
+#   # discover 아티팩트는 자동 로드됩니다 (include_vars)
 #   ansible-playbook playbooks/4002_hardening_apply.yml -i inventory
+#   ansible-playbook playbooks/4002_hardening_apply.yml -i inventory --limit web01
 #
 # 사전 조건:
 #   - 보안 에이전트(Wazuh, CrowdStrike, Velociraptor) 설치 완료
