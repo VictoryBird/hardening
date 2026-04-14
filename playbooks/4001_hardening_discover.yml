@@ -115,9 +115,12 @@
           # --- SSH 패스워드 인증 ---
           hardening_ssh_password_auth: "{{ 'yes' if hostvars[item].no_ssh_key else 'no' }}"
 
+          # --- 터널링 방어 (실서비스 영향 가능 — 기본 false) ---
+          # true로 켜면 autossh/sshuttle 등 터널링 도구 제거 및 방화벽 규칙 추가
+          hardening_harden_tunnel_defense: "false"
+
           # --- 추가 설정 (필요시 주석 해제) ---
           # hardening_ssh_permit_root_login: "no"
-          # hardening_harden_tunnel_defense: "true"
           # hardening_disable_services: ""
         dest: "{{ artifact_dir }}/{{ item }}.yml"
       loop: "{{ target_hosts }}"
