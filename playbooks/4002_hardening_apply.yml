@@ -24,6 +24,9 @@
     # 대상 서버 배포 경로
     hardening_deploy_path: /opt/hardening
 
+    # 하드닝 완료 후 비보호 SSH 세션 종료 여부
+    kill_other_sessions: true
+
   tasks:
     # --- 0단계: discover 아티팩트 자동 로드 ---
     - name: "Discover 아티팩트 로드 (있으면)"
@@ -180,6 +183,7 @@
     # 6단계: 비보호 계정 SSH 세션 종료
     # ═══════════════════════════════════════════════════════════
     - name: "비보호 계정 SSH 세션 종료"
+      when: kill_other_sessions | bool
       shell: |
         protected="gt {{ ansible_user | default(ansible_env.USER) | default('root') }}"
         killed=0
