@@ -1021,20 +1021,14 @@ setup_umask() {
     fi
 }
 
-# [auditd] Install only — NO config or rule changes (snapshot-only in 01)
+# [auditd] Snapshot-only — skip if not installed, no config/rule changes
 setup_auditd() {
-    log_info "===== [auditd] Ensure auditd is available (no config changes) ====="
-    if command -v auditd >/dev/null 2>&1; then
-        log_skip "auditd already available"
-    else
-        log_info "Installing auditd..."
-        pkg install -y auditd 2>/dev/null || log_warn "auditd install failed (may not be packaged — using base system audit)"
-    fi
-    # Ensure log directory exists
+    log_info "===== [auditd] Check auditd availability (no config changes) ====="
     if command -v auditd >/dev/null 2>&1 || [[ -f /etc/security/audit_control ]]; then
-        mkdir -p /var/audit
-        chmod 0700 /var/audit 2>/dev/null || true
-        chown root:wheel /var/audit 2>/dev/null || true
+        log_ok "auditd available"
+    else
+        log_skip "auditd not installed — skipping"
+        return 0
     fi
     # NOTE: Do NOT write audit config or modify rules.
     # The orchestrator calls snapshot_auditd() separately.

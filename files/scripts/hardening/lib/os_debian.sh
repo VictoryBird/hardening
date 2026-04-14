@@ -1426,25 +1426,14 @@ _deb_tunnel_remove_tools() {
     done
 }
 
-# [auditd] Install only — NO config or rule changes (snapshot-only in 01)
+# [auditd] Snapshot-only — skip if not installed, no config/rule changes
 setup_auditd() {
-    log_info "===== [auditd] Ensure auditd is installed (no config changes) ====="
+    log_info "===== [auditd] Check auditd installation (no config changes) ====="
     if ! command -v auditd >/dev/null 2>&1; then
-        log_info "Installing auditd..."
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update -qq
-        apt-get install -y auditd || { log_error "auditd install failed"; return 0; }
-        log_ok "auditd installed"
-    else
-        log_skip "auditd already installed"
+        log_skip "auditd not installed — skipping"
+        return 0
     fi
-    # Ensure log directory exists
-    if command -v auditd >/dev/null 2>&1; then
-        mkdir -p /var/log/audit
-        touch /var/log/audit/audit.log 2>/dev/null || true
-        chown -R root:root /var/log/audit 2>/dev/null || true
-        chmod 0600 /var/log/audit/audit.log 2>/dev/null || true
-    fi
+    log_ok "auditd installed"
     # NOTE: Do NOT write auditd.conf or modify rules.
     # The orchestrator calls snapshot_auditd() separately.
 }
