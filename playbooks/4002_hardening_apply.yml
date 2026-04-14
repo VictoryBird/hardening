@@ -75,7 +75,7 @@
     - name: "SSH 패스워드 인증 결정"
       set_fact:
         final_ssh_pw_auth: >-
-          {%- if hardening_ssh_password_auth is defined -%}{{ hardening_ssh_password_auth }}
+          {%- if hardening_ssh_password_auth is defined and (hardening_ssh_password_auth | string) != '' -%}{{ hardening_ssh_password_auth }}
           {%- elif not (ansible_user_ssh_key.stat.exists | default(false)) or (ansible_user_ssh_key.stat.size | default(0)) == 0 -%}yes
           {%- else -%}no{%- endif -%}
 
@@ -93,6 +93,7 @@
           ACCOUNT_ALLOWLIST: "{{ hardening_account_allowlist | default('') }}"
           SSH_PERMIT_ROOT_LOGIN: "{{ hardening_ssh_permit_root_login | default('') }}"
           DISABLE_SERVICES: "{{ hardening_disable_services | default('') }}"
+          HARDEN_TUNNEL_DEFENSE: "{{ hardening_harden_tunnel_defense | default('') }}"
 
     - name: "최종 environment 로그"
       debug:
