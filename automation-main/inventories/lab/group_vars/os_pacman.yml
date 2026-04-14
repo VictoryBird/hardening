@@ -1,2 +1,0 @@
-os_ssh_service_name: sshd
-os_sudo_group: wheel

@@ -1,9 +1,0 @@
-managed_by: ansible
-organization_name: bt14_ansible
-
-control_artifacts_root: "{{ playbook_dir }}/../artifacts"
-
-minio_alias: "myminio"
-minio_bucket: "linux-artifacts"
-minio_prefix: "jsung"
-minio_target: "{{ minio_alias }}/{{ minio_bucket }}/{{ minio_prefix }}"
