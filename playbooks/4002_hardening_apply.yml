@@ -94,6 +94,7 @@
           SSH_PERMIT_ROOT_LOGIN: "{{ hardening_ssh_permit_root_login | default('') }}"
           DISABLE_SERVICES: "{{ hardening_disable_services | default('') }}"
           HARDEN_TUNNEL_DEFENSE: "{{ hardening_harden_tunnel_defense | default('') }}"
+          ANSIBLE_ACCOUNT: "{{ ansible_user | default(ansible_env.USER) | default('root') }}"
 
     - name: "최종 environment 로그"
       debug:

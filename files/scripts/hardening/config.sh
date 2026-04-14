@@ -62,7 +62,8 @@ OUTBOUND_ALLOW_ICMP="${OUTBOUND_ALLOW_ICMP:-true}"
 # 전 서버 공통 보호 계정 (공백 구분)
 # 이 계정들은 하드닝 중 잠금/nologin/NOPASSWD 제거에서 제외됩니다.
 # 예: "gt operator deploy"
-PROTECTED_ACCOUNTS=""
+# Ansible 접속 계정(ANSIBLE_ACCOUNT 환경변수)은 플레이북에서 자동 추가됩니다.
+PROTECTED_ACCOUNTS="${PROTECTED_ACCOUNTS:-} ${ANSIBLE_ACCOUNT:-}"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
