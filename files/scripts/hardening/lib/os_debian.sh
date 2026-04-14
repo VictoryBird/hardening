@@ -708,7 +708,7 @@ setup_ufw() {
 
     # -- Enable UFW --
     ufw --force enable 2>/dev/null || log_warn "UFW enable failed"
-    log_ok "UFW enabled (profile: ${DEB_UFW_PROFILE})"
+    log_ok "UFW enabled (ports: ${profile_ports})"
 
     # -- Write tunnel defense to after.rules --
     log_info "  Writing tunnel defense block to after.rules"

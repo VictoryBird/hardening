@@ -322,7 +322,7 @@ setup_firewall() {
     # -- Write pf.conf --
     cat > "$pf_conf" <<PF_CONF_EOF
 # pf.conf — Security hardening (auto-generated: ${TIMESTAMP})
-# Profile: ${BSD_PF_PROFILE}
+# Ports: ${profile_ports}
 
 # Macros
 ext_if = "$(route -n get default 2>/dev/null | awk '/interface:/{print $2}' || echo "em0")"
@@ -388,7 +388,7 @@ PFEOF
     fi
 
     chmod 0600 "$pf_conf"
-    log_ok "pf.conf written (profile: ${BSD_PF_PROFILE})"
+    log_ok "pf.conf written (ports: ${profile_ports})"
 
     # -- Enable and load pf --
     sysrc pf_enable="YES" 2>/dev/null || true

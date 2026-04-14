@@ -640,7 +640,7 @@ setup_firewall() {
 
     # -- Reload to apply persistent rules --
     firewall-cmd --reload 2>/dev/null || log_warn "firewalld reload failed"
-    log_ok "firewalld reloaded (profile: ${RHEL_FIREWALLD_PROFILE})"
+    log_ok "firewalld reloaded (ports: ${profile_ports})"
 
     # -- Outbound policy --
     if [[ "${OUTBOUND_POLICY}" == "restrict" ]]; then
