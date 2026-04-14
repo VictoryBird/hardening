@@ -561,12 +561,16 @@ setup_sudoers() {
             sed -i '' "${_skip_pattern}s/^\([^%#][[:alnum:]_.-][[:alnum:]_.-]*[[:space:]][[:space:]]*ALL=(ALL)\)[[:space:]][[:space:]]*NOPASSWD:[[:space:]][[:space:]]*ALL/\1 ALL/;" "$sudoers"
             sed -i '' "${_skip_pattern}s/^\([^%#][[:alnum:]_.-][[:alnum:]_.-]*[[:space:]][[:space:]]*ALL=(ALL:ALL)\)[[:space:]][[:space:]]*NOPASSWD:[[:space:]][[:space:]]*ALL/\1 ALL/;" "$sudoers"
 
+            # sed -i may not preserve mode — restore 0440 before visudo check
+            chown root:wheel "$sudoers"
+            chmod 0440 "$sudoers"
             if visudo -c -f "$sudoers" 2>/dev/null; then
                 log_ok "sudoers NOPASSWD removed (protected accounts preserved, syntax validated)"
             else
                 log_error "sudoers syntax error! Restoring from backup: ${BACKUP_DIR}"
                 local backup_sudoers="${BACKUP_DIR}/_usr_local_etc_sudoers"
                 [[ -f "$backup_sudoers" ]] && cp "$backup_sudoers" "$sudoers"
+                chmod 0440 "$sudoers"
             fi
         else
             log_skip "No NOPASSWD in sudoers"
