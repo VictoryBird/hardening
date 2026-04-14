@@ -100,17 +100,6 @@ BSD_PASS_MIN_DAYS="${PASS_MIN_DAYS}"
 BSD_PASS_WARN_AGE="${PASS_WARN_AGE}"
 BSD_DEFAULT_UMASK="${DEFAULT_UMASK}"
 
-# --- pf firewall profile (from config.sh) ---
-BSD_PF_PROFILE="${HARDENING_PROFILE}"
-
-declare -A BSD_PF_PROFILES=(
-    [base]="22"
-    [web]="22 80 443"
-    [ad]="22 53 88 389 636 3268 3269"
-    [log]="22 514 1514 1515 1516"
-    [full]="22 53 80 88 389 443 514 636 953 1514 1515 1516 3268 3269"
-)
-
 # --- Tunnel defense settings (from config.sh) ---
 BSD_TUNNEL_ICMP_MAX_PAYLOAD="${TUNNEL_ICMP_MAX_PAYLOAD}"
 BSD_TUNNEL_REMOVE_TOOLS="${TUNNEL_REMOVE_TOOLS}"
@@ -313,7 +302,6 @@ setup_firewall() {
     # -- pf allowed ports --
     local profile_ports=""
     if [[ -n "${BSD_CUSTOM_ALLOWED_PORTS}" ]]; then
-        # CUSTOM_ALLOWED_PORTS가 설정됨 — 프로파일 무시, 이 포트만 사용
         # port/tcp 형식에서 포트 번호만 추출 (pf는 포트 번호만 사용)
         profile_ports=$(echo "${BSD_CUSTOM_ALLOWED_PORTS}" | tr ' ' '\n' | sed 's|/tcp||; s|/udp||' | sort -un | tr '\n' ' ' | sed 's/ *$//')
         # SSH 포트가 포함되어 있지 않으면 자동 추가
@@ -322,19 +310,9 @@ setup_firewall() {
         fi
         log_info "pf: CUSTOM_ALLOWED_PORTS 사용 (ports: ${profile_ports})"
     else
-        # 폴백: 프로파일 기반 포트
-        if [[ -n "${BSD_PF_PROFILES[$BSD_PF_PROFILE]+x}" ]]; then
-            profile_ports="${BSD_PF_PROFILES[$BSD_PF_PROFILE]}"
-        else
-            log_warn "Unknown pf profile: ${BSD_PF_PROFILE} — using base"
-            profile_ports="${BSD_PF_PROFILES[base]}"
-        fi
-        # Replace 22 with detected SSH port if non-standard
-        if [[ "$detected_ssh_port" != "22" ]]; then
-            profile_ports="${profile_ports//22/${detected_ssh_port}}"
-            log_info "pf profile SSH port replaced: 22 -> ${detected_ssh_port}"
-        fi
-        log_info "pf profile: ${BSD_PF_PROFILE} (ports: ${profile_ports})"
+        # CUSTOM_ALLOWED_PORTS 비어있음 — SSH만 허용
+        profile_ports="${detected_ssh_port}"
+        log_info "pf: CUSTOM_ALLOWED_PORTS 비어있음 — SSH(${detected_ssh_port})만 허용"
     fi
 
     # Build port list macro

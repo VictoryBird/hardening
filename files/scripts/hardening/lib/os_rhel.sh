@@ -144,22 +144,11 @@ RHEL_PASS_WARN_AGE="${PASS_WARN_AGE}"
 RHEL_LOGIN_RETRIES="${LOGIN_RETRIES}"
 RHEL_DEFAULT_UMASK="${DEFAULT_UMASK}"
 
-# --- firewalld profile-based port sets (from config.sh) ---
-RHEL_FIREWALLD_PROFILE="${HARDENING_PROFILE}"
-
 RHEL_SHM_NOEXEC="${SHM_NOEXEC}"
 RHEL_HIDEPID_ENABLED="${HIDEPID_ENABLED}"
 RHEL_FAILLOCK_DENY="${FAILLOCK_DENY}"
 RHEL_FAILLOCK_UNLOCK_TIME="${FAILLOCK_UNLOCK_TIME}"
 RHEL_FAILLOCK_DENY_ROOT="${FAILLOCK_DENY_ROOT}"
-
-declare -A RHEL_FIREWALLD_PROFILES=(
-    [base]="22/tcp"
-    [web]="22/tcp 80/tcp 443/tcp"
-    [ad]="22/tcp 53/tcp 53/udp 88/tcp 389/tcp 389/udp 636/tcp 3268/tcp 3269/tcp"
-    [log]="22/tcp 514/udp 1514/tcp 1515/tcp 1516/tcp"
-    [full]="22/tcp 53/tcp 53/udp 80/tcp 88/tcp 389/tcp 389/udp 443/tcp 514/udp 636/tcp 953/tcp 1514/tcp 1515/tcp 1516/tcp 3268/tcp 3269/tcp"
-)
 
 # --- Tunnel defense settings (from config.sh) ---
 RHEL_TUNNEL_ICMP_MAX_PAYLOAD="${TUNNEL_ICMP_MAX_PAYLOAD}"
@@ -626,7 +615,6 @@ setup_firewall() {
     # -- firewalld allowed ports --
     local profile_ports=""
     if [[ -n "${RHEL_CUSTOM_ALLOWED_PORTS}" ]]; then
-        # CUSTOM_ALLOWED_PORTS가 설정됨 — 프로파일 무시, 이 포트만 사용
         profile_ports="${RHEL_CUSTOM_ALLOWED_PORTS}"
         # SSH 포트가 포함되어 있지 않으면 자동 추가
         if ! echo "$profile_ports" | grep -qE "(^| )${detected_ssh_port}/tcp( |$)"; then
@@ -634,18 +622,9 @@ setup_firewall() {
         fi
         log_info "firewalld: CUSTOM_ALLOWED_PORTS 사용 (ports: ${profile_ports})"
     else
-        # 폴백: 프로파일 기반 포트
-        if [[ -n "${RHEL_FIREWALLD_PROFILES[$RHEL_FIREWALLD_PROFILE]+x}" ]]; then
-            profile_ports="${RHEL_FIREWALLD_PROFILES[$RHEL_FIREWALLD_PROFILE]}"
-        else
-            log_warn "Unknown firewalld profile: ${RHEL_FIREWALLD_PROFILE} — using base"
-            profile_ports="${RHEL_FIREWALLD_PROFILES[base]}"
-        fi
-        if [[ "$detected_ssh_port" != "22" ]]; then
-            profile_ports="${profile_ports//22\/tcp/${detected_ssh_port}\/tcp}"
-            log_info "firewalld profile SSH port replaced: 22/tcp -> ${detected_ssh_port}/tcp"
-        fi
-        log_info "firewalld profile: ${RHEL_FIREWALLD_PROFILE} (ports: ${profile_ports})"
+        # CUSTOM_ALLOWED_PORTS 비어있음 — SSH만 허용
+        profile_ports="${detected_ssh_port}/tcp"
+        log_info "firewalld: CUSTOM_ALLOWED_PORTS 비어있음 — SSH(${detected_ssh_port}/tcp)만 허용"
     fi
 
     # -- Allow port rules (persistent) --

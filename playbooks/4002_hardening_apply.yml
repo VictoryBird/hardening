@@ -86,7 +86,6 @@
     - name: "하드닝 environment 조립"
       set_fact:
         hardening_environment:
-          HARDENING_PROFILE: "custom"
           CUSTOM_ALLOWED_PORTS: "{{ hardening_allowed_ports | default('') }}"
           SSH_PASSWORD_AUTH: "{{ final_ssh_pw_auth | trim }}"
           SYSCTL_DISABLE_IP_FORWARD: "{{ final_ip_forward | trim }}"
