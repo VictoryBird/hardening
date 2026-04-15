@@ -1081,7 +1081,9 @@ SSHEOF
         sed -i '1i Include /etc/ssh/sshd_config.d/*.conf' "$sshd_config"
         log_info "sshd_config: Include directive inserted at top"
     fi
-    if sshd -t 2>/dev/null; then
+    local _sshd_test_output
+    _sshd_test_output=$(sshd -t 2>&1)
+    if [[ $? -eq 0 ]]; then
         if systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null; then
             sleep 1  # Allow sshd to complete reload before continuing
             log_ok "SSH hardening applied and service reloaded"
@@ -1099,6 +1101,7 @@ SSHEOF
             log_warn "Verify FAIL: PasswordAuthentication expected=${effective_pw_auth}, actual=${verify_pw}"
     else
         log_error "sshd config syntax error — rolling back"
+        log_error "sshd -t output: ${_sshd_test_output}"
         rm -f "$hardened_conf"
     fi
 }
