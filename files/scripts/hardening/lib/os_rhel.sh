@@ -895,10 +895,20 @@ setup_sudoers() {
             # sed -i may not preserve mode — restore 0440 before visudo check
             chown root:root /etc/sudoers
             chmod 0440 /etc/sudoers
-            if visudo -c 2>/dev/null; then
+            # Temporarily move /etc/sudoers.d/README (not a valid sudoers file on some systems)
+            local _readme_moved=0
+            if [[ -f /etc/sudoers.d/README ]]; then
+                mv /etc/sudoers.d/README /tmp/.hardening_sudoers_readme && _readme_moved=1
+            fi
+            local _visudo_output
+            _visudo_output=$(visudo -c 2>&1)
+            local _visudo_rc=$?
+            [[ $_readme_moved -eq 1 ]] && mv /tmp/.hardening_sudoers_readme /etc/sudoers.d/README
+            if [[ $_visudo_rc -eq 0 ]]; then
                 log_ok "sudoers NOPASSWD removed (protected accounts preserved, syntax validated)"
             else
                 log_error "sudoers syntax error! Restoring from backup: ${BACKUP_DIR}"
+                log_error "visudo output: ${_visudo_output}"
                 local backup_sudoers="${BACKUP_DIR}/_etc_sudoers"
                 [[ -f "$backup_sudoers" ]] && cp "$backup_sudoers" /etc/sudoers
                 chmod 0440 /etc/sudoers
